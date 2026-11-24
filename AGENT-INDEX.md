@@ -24,6 +24,7 @@ Generated 2026-11-24. Do not hand-edit. Re-run after adding or moving files: fro
 - `.gitignore`
 - `CLAUDE.md` - Claude Code instructions: Lilycove Co - Before writing any code this session
 - `CREDITS.md` - Credits - ohbem by Mygod (Apache 2.0): PvP rank engine. Masterfile from WatWowMap/Masterfile-Generator.
+- `LICENSE`
 - `package-lock.json`
 - `package.json` - lilycoveco - Lilycove Co - scripts: test, typecheck, refresh, rank, start
 - `progress.txt` - progress.txt (append only)

@@ -27,6 +27,10 @@ See [CREDITS.md](CREDITS.md): ohbem (Apache 2.0), PvPoke data (MIT), Pokémon Sh
 
 Not affiliated with Niantic, Nintendo, Game Freak or The Pokémon Company.
 
+## License
+
+MIT, see [LICENSE](LICENSE). Pokémon names and art belong to their owners.
+
 ## Support
 
 If this helps you, [support Ready Set Ink on Ko-fi](https://ko-fi.com/J2E225ZV4T).
