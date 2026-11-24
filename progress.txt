@@ -1,0 +1,136 @@
+# progress.txt (append only)
+2026-11-22: Folder set up from PRD. 8 issues in issues/. Issue 03 needs Ben's fixture screenshots in fixtures/screenshots/.
+2026-11-22: Ben added fixtures: 25 screenshots in fixtures/screenshots/, 1 video in fixtures/videos/pogo_video.MP4. Issue 03 (and 06) unblocked.
+2026-11-22: Issue 01 done (rank + name from typed numbers).
+  - Stack: TS (ESM, NodeNext), vitest, tsx. `npm test`, `npm run typecheck`, `npm run refresh` (re-download data), `npm run rank -- piplup 0 15 15 10 pip`.
+  - Data cache: data/cache/ (gitignored): ohbem masterfile (WatWowMap GitHub) + PvPoke gamemaster + rankings 500/1500/2500. Rank tests auto-download if missing.
+  - Modules: src/data.ts (cache), src/rank.ts (createRankEngine(cacheDir,{levelCap=50}).rank(species, ivs, level)), src/namer.ts (buildName, cleanNickname), src/index.ts (nameFromNumbers).
+  - ohbem is CJS with ES-default types: load via createRequire (see rank.ts). Masterfile has no names; names/dex come from PvPoke gamemaster (first entry per dex). Stage = depth in masterfile evolution tree.
+  - Ranks use level cap 50 only. Megas filtered out of rank lists (issue 05 handles mega-under-cap). Shadows not handled yet (issue 07).
+  - ohbem README's Beheeyem rank (384) is stale; current data says 197. Use README anchors only where still true (Elgyem LC #548, Talonflame UL #21 @ L51).
+  - Namer choices: second league = next league in priority order G>U>L with rank <50 (not best rank). Second-league stage written with a space ("U42 2"), since the PRD's glued form "U422" is ambiguous.
+  - FOR BEN to confirm: (1) "L1 dominator" example conflicts with the 6-char nickname rule; code truncates to "L1 domina". (2) Second-league stage spacing "G118 1 U42 2" OK? (3) Level 50 ranks (not 51) OK?
+  - fixtures/ left out of git (55 MB of PNG/MP4); decide later whether to commit or gitignore.
+2026-11-22: Ben said "do whatever you need" -> Claude's calls on the open questions: keep 6-char nickname rule (PRD) so "L1 domina"; second-league stage spaced ("G118 1 U42 2"); level 50 ranks. Fixture PNG/MP4 gitignored (stay local); expected.json will be committed.
+2026-11-22: Issue 02 done (local server + scan count).
+  - src/store.ts: openStore(path) -> save/count/list, Node built-in node:sqlite (no deps). DB at data/pokegenie.sqlite (gitignored).
+  - src/server.ts: startServer(store, port=4242). GET / = home page "Pokémon scanned: N" + last 20 scans; GET /api/count. src/main.ts = entry (`npm start`).
+  - Startup: scripts/install-server.sh writes ~/Library/LaunchAgents/com.ben.pokegenie.plist (node --import tsx src/main.ts, KeepAlive). Auto mode blocked Claude from installing it; Ben must run it once. Log: ~/Library/Logs/pokegenie.log.
+  - Possible snag: launchd node reading ~/Desktop may hit macOS privacy (Files & Folders) prompt; if the log shows EPERM, give node Full Disk Access or move the repo out of Desktop.
+2026-11-22: Issue 03 done (read one screenshot).
+  - helper/vision.swift -> bin/vision (gitignored, auto-built by src/screen/vision.ts on first use with swiftc). Args: <image> [rgbaOut|-] [x y w h]. Crop mode OCRs a region upscaled 4x (reads the tiny XS/XL/XXL badge).
+  - src/screen/ivbars.ts: bar found by walking down from the "Attack"/"Defense"/"HP" OCR labels; IV = round(15 * filled px / bar px). Filled = orange or red (red = 15).
+  - src/species.ts: candidates = candy family (else family of "This X was caught" species); exact CP+HP match over levels 1-51; type line breaks ties between regional forms (Alolan Exeggutor has almost the same stats). Exact CP+HP agreement is the check that the IVs were read right: 24/25 fixtures match exactly.
+  - Hidden CP (e.g. "CP27" + Exeggutor's neck) is solved from the math only when it comes out to one answer; fixture 10 is a real tie (2769 vs 2790), so it goes to Failed scans as expected.
+  - "This X was caught" gives the true current species even when renamed (fixture 5 "Trade 26" = Bronzor).
+  - Server: POST /scan?name=<file> (raw image body) -> read -> save or Failed scans. Home page has an upload box + Failed scans table. Uploads saved to data/uploads/ so failed ones can be redone.
+  - Namer: names starting with "trade" are treated as tags, not nicknames.
+  - ohbem ranks base forms only (form 0). Forms like Alolan get ranked as the base species for now -> revisit in issue 05.
+  - Not detected yet: shiny, shadow, special background (need example screenshots from Ben). OCR sometimes drops spaces ("L51 1" -> "L511").
+  - BUG FIXED: URL.pathname keeps %20 -> use fileURLToPath. It had created a junk folder "~/Desktop/Ben/Buisness%20Projects/" (cache copies + empty DB). Not deleted (needs Ben's yes).
+2026-11-22: Issue 04 server side done; status needs-ben-test (Shortcut + 5s timing need Ben's phone).
+  - POST /live (raw image body) -> {ok, notify, rename}. Same save/failed path as /scan. Guide: docs/live-mode-setup.md (URL http://YOUR-MAC.local:4242/live).
+  - Verdict text is a rank summary for now; issue 05 adds keep/trade/transfer and should extend the notify line.
+2026-11-22: Issue 05 done (keep slots + "beats your").
+  - src/slots.ts (pure): slot = league x target species (x mega). Passes: L1-L9 -> meta-league picks -> Great -> Ultra -> other Little; within a pass best rank claims; rank >= 250 never counts; no slot = transfer. beatsMessage(before, after, id).
+  - Claude's calls (Ben said "answer yourself"): meta pick = species in PvPoke top 100 for that league (forms/shadows collapse to base name); meta picks rank ahead of plain Great. Mega slots use stage code "m" (e.g. "G181 m"). Duplicate scan = same species+IVs+CP+HP, newest wins.
+  - src/collection.ts: store.details() -> rank (cached per scan id) -> assignSlots -> Keep/Trade/Transfer items with slot-based rename + search string. place(id) gives verdict + beats for the new scan.
+  - src/search.ts: "name&cpN"; dex number when the name has symbols; adds &hpN if two scans share species+CP.
+  - Namer: buildName({..., primary}) names a keeper for its slot. Species name on screen = no nickname (fixed in reader + collection; expected.json updated).
+  - Server: page shows Keep/Trade/Transfer with tap-to-copy rename + search; /live notify = "KEEP Bronzor 13/13/11: U153 1, beats your G40". Trade list stays empty until issue 07.
+  - Fixture run: 9 keep, 15 transfer, 1 failed; ~0.5s per scan.
+2026-11-22: Issue 06 done (batch video).
+  - src/video.ts: ffmpeg samples 10 fps at 66x144 gray; pickFrames() keeps one frame per still stretch (mean abs diff < 6, >= 3 frames), second-to-last frame so bars are filled. Full-size PNG grabbed with ffmpeg -ss.
+  - Ben's 12 s video -> 12 Pokémon, 12/12 read (math-verified), ~10 s total end to end. Expected list in fixtures/expected.json["videos/pogo_video.MP4"].
+  - Server: POST /video?name= (raw body) -> {job}; GET /video/<job> -> {total, processed, failed, done, results}. Page: "Add screen recording" + progress bar. Shared ingest() for /scan, /live, video.
+  - Reader fixes from video frames: bar scan tolerates 3-row gaps; Cyrillic/Greek look-alikes mapped to Latin ("HР").
+  - Rank engine: megas only if PvPoke lists them released (ohbem includes unreleased, e.g. Mega Excadrill).
+  - Untested at scale: a 50-Pokémon recording. If Ben swipes fast (<0.3 s per Pokémon) frames could merge; tune minRun/STILL_UNDER in src/video.ts.
+2026-11-22: Issue 07 done (PvE, collection, protected, trade rules).
+  - src/rules.ts (pure): PvE = one per species, best on Ben's list (15/15/15 ... 14/14/15). Collection = XXS/XXL badge (most extreme height stays, duplicates -> "trade xxs 26"/"trade xxl 26") + the game's HEAVIEST/LIGHTEST labels. Protected = lucky, best buddy, legendary, mythical, shiny, caught before 2018, Ben's never-transfer list. Trade tags: distance (outside CA/MI or outside US) "trade d yy", trade evolution "trade evo yy", candy XL "trade yy". yy = year caught. Evolve-for-dex = lucky that can evolve.
+  - Claude's calls: heaviest/lightest uses the game's label, not "max of my scans" (that would keep every species seen once). Duplicate XXS/XXL tag "trade xxs yy" (Ben gave no tag for it). XL rule = family member in PvPoke top 100 of a league where PvPoke's default IVs need level > 40; Lickitung currently ranks GL #254 so it no longer qualifies (Ben's example was from an older meta).
+  - collection.ts: loadFacts() from PvPoke (legendary/mythical tags, family evolutions, XL). Verdict keep > trade > transfer. Shadows get "(shadow)" slots. Unrankable species are listed with a reason, never dropped.
+  - Store: never_transfer table; page "Never transfer" add/remove form (POST /exceptions).
+  - rank.ts: base names registered for form-only species (Minior, Pumpkaboo).
+  - Not detectable yet (issue 09, needs Ben's examples): shiny, shadow, costume, event form, special background -> also trade evt/sbg.
+  - Full fixture run (24 screenshots + 12 video): 18 keep, 2 trade, 16 transfer, 1 failed.
+2026-11-22: Issue 08 done (PvPoke auto-refresh + Tailscale).
+  - refreshCache is all-or-nothing now: downloads all 5 files, JSON-checks each, then swaps in via .new + rename. A failed/HTML download leaves old data.
+  - src/autorefresh.ts: refresh at start if any file is older than 24 h, then every 24 h; failures logged, server keeps running. main.ts rebuilds resolver/ranks/collection after each refresh (no restart).
+  - Footer: "PvPoke data: <gamemaster timestamp> · downloaded <time> UTC" (data.ts dataInfo()).
+  - Tailscale already on Ben's Mac + iPhone (their tailnet). Server binds 0.0.0.0, reachable at http://YOUR-MAC.YOUR-TAILNET.ts.net:4242 and 100.x.x.x:4242 (checked from the Mac). Guide now uses the Tailscale URL for the Shortcut so it works home and away.
+2026-11-22: Page layout for iPhone: rows are species | rename + search buttons (tap to copy) + reason; fixed table layout so nothing overflows. Remaining: issue 04 needs Ben's phone test; issue 09 needs example screenshots (shiny/shadow/costume/background).
+2026-11-22: Live mode bug (found by Ben's first phone test): a scanned Galarian Zigzagoon saved OK, then collection.place threw and the request never answered, so the Shortcut got no JSON. Hotfix: place() wrapped in try, whole handler returns JSON on any error and logs it. nameFromNumbers also returned '' for zigzagoon_galarian. TODO next round: find why place() throws for regional forms and add a test.
+2026-11-22: Ben's live tests: most failures are 'Could not read cp' because the Dynamic Island (Shortcut running) covers the CP during the screenshot. Added issue 10 + fixtures/live-failures/. Also told Ben to add a 1-second Wait before Take Screenshot.
+2026-11-22: Ben asked for uploads to be deleted after use (disk space). Issue 11 added. Do issue 10 and 11 next.
+2026-11-23: Issue 09 BLOCKED (lowest ready issue). Ben must: take 4 appraisal-screen screenshots on his iPhone (1 shiny, 1 shadow, 1 costume/event form, 1 special background), AirDrop them to the Mac, and drop them in fixtures/screenshots/ named shiny.png, shadow.png, costume.png, background.png. Tip: to unblock issues 10 and 11 now, set issue 09 to "**Status:** needs-ben" so the loop skips it.
+2026-11-23: Issue 10 done (CP hidden by the Dynamic Island).
+  - src/screen/arc.ts: arcDot() finds the level arc's white dot (0..1 along the arc). Geometry as share of width: centre x 0.5w, cy 0.634w, r 0.405w (Ben's 1320px iPhone). Walks the solid white stroke from the left end; requires the dot to be >= 1.5x stroke thickness and the faint unfilled arc to follow, else null (Pokémon hiding the dot, e.g. Pumpkaboo).
+  - Dot model: position = (CPM(level) - CPM(1)) / (CPM(50) - CPM(1)). Fits all 24 screenshots within 0.004 (0.009 at level 1). Assumes Ben's arc caps at level 50 (ARC_MAX); change it if that's ever wrong.
+  - species.ts: resolver.candidates() = every level that fits HP + IVs (no CP). read.ts: CP missing/garbled ("CPL44") -> candidates -> narrowed by any digits read -> pickByDot. Still ambiguous -> "CP covered: try again". No Attack/Defense labels -> "Open the appraisal first". /live shows those two reasons as-is (no "Scan failed:" prefix).
+  - Test hides the CP on every fixture: 0 wrong answers. Both live-failure screenshots now read (Bulbasaur 244, Galarian Zigzagoon 277).
+  - Commit also includes the earlier live-mode hotfix in server.ts (place() try/catch, JSON on any error). Still open: why place() throws for regional forms (no test yet).
+  - Untested: other iPhone sizes and video frames for the arc geometry (only 1320px screenshots checked).
+2026-11-23: Issue 11 done (auto-delete uploads).
+  - src/uploads.ts: removeUpload(dir, path) is the only delete; refuses anything outside data/uploads (and the folder itself). sweepUploads() deletes top-level entries with mtime > 7 days. uploadsSize/formatBytes for the footer ("Uploads: 2.5 MB").
+  - server.ts: ingest() deletes the image on success. Failed video frames are moved up to data/uploads/<video>-frame-NNNN.png before the frames folder is deleted, so Failed scans still point at a real file. Video + frames folder removed when the job ends (also on ffmpeg error).
+  - Sweep runs at server start and every 6 h. First start after this ships clears any uploads older than 7 days already in data/uploads (Ben's request = the yes).
+  - Failed scans rows stay in SQLite after the sweep; only the file goes.
+2026-11-23: Regional forms fixed (hands-on, not a Ralph round). The "place() throws for regional forms" TODO no longer reproduces (the issue 10 reader fix made Galarian Zigzagoon read right), but the real bug was ranks: rank() always queried form 0, so Galarian/Alolan/Hisuian/Paldean Pokémon got the normal form's ranks and evolution line.
+  - rank.ts: rank(species, ivs, level, speciesId?). PvPoke regional entries are matched to the ohbem form id by types + base stats (masterfile has no form names); stage names come back as "Linoone (Galarian)". Top-level species stays plain for the search string. Forms that match the normal form's stats/types fall back to form 0.
+  - collection.ts passes d.speciesId. slots.ts regionalBase() strips the region for meta-pick and XL lookups (those sets use plain names).
+  - Jarvis Power: PokeGenie row added to the AI APPS panel (launchctl bootout/bootstrap, since KeepAlive respawns a killed server).
+2026-11-23: Issue 09 done (hands-on).
+  - src/screen/flags.ts: isShadow = violet (hue 252-306, s>.45, v>.35) > 10% in the centre box and < 5% at the left edge; any OCR text /dynam|gigant/ -> not shadow (Dynamax purple swirl). isSpecialBackground = 30th-percentile cell roughness above the card > 11 (normal <= 8, special 13-22).
+  - Shiny + costume can't be read from pixels. Transfer search strings now end "&!shiny&!costume" so the game itself skips them.
+  - Special background -> "trade sbg yy" (beats the distance tag).
+  - Known misses: shiny Emboar (embers + sparkles) reads as special background (rough 14.6); Hitmontop (screenshots8, purple clouds) reads as special background, probably right. Mewtwo 10th-anniversary: CP unreadable on the bright Earth -> "CP covered: try again".
+2026-11-23: Renamed to Lilycove Co. Folder Claude apps/lilycove_co, launchd label com.ben.lilycoveco (old plist moved out), log ~/Library/Logs/lilycove.log, DB data/lilycove.sqlite (scans kept). Page restyled with ben-app-design (Inter, #5b5bd6 accent, parchment + white 18px cards, pill buttons, no emoji). Vault notes moved to 10-Projects/personal projects/Lilycove Co/.
+2026-11-23: Manual CP override. parse(pic, resolver, { cp }) trusts a typed CP (no arc guessing; wrong CP -> "CP N doesn't fit this Pokémon's HP/IVs"). POST /retry?id=&cp= re-reads a failed scan's kept image; success saves it, deletes the image and the failed row; failure leaves both. Failed scans list shows a thumbnail (GET /failed-image/<id>, uploads folder only) + "Type the CP" + Retry. Also fixed failed_scans.file paths after the folder rename (pokegenie-by-ben -> lilycove_co).
+2026-11-23: Collection tab + cleanup rules (hands-on, Ben's feature list).
+  - /collection: every saved Pokémon (not transferred-away) with pixel sprite, verdict, rename/search copy buttons. Sort Pokédex / Recent / Dust needed (tap again to flip). Search by species. Gen jump chips "1 Kanto" ... "9 Paldea" (switch to Pokédex sort and scroll). GET /api/collection = same data as JSON.
+  - Keepers with a slot show the build: IV rank + PvPoke meta place ("#49 in Great League meta"), PvPoke recommended moves with "Elite Fast/Charged TM" tags (gamemaster eliteMoves + legacyMoves), power-up to the rank's level (dust/candy/XL), evolve candy, 2nd charged move dust/candy, total dust, candy have vs need.
+  - src/cost.ts: power-up tables checked against 1->40 = 270k dust/304 candy and 40->50 = 250k dust/296 XL. Shadow 1.2x dust+candy, lucky 0.5x dust (purified not detectable, not applied). 2nd move candy by tier 10k/25, 50k/50, 75k/75, 100k/100.
+  - src/build.ts: meta place, moves, elite, family, evolve candy (pogoapi.net evolutions, optional download: a failure never blocks the PvPoke refresh). Megas not in PvPoke rankings fall back to the plain species. Mega energy not counted.
+  - Reader: candyCount (centre number above "X CANDY") and xlCount (right number; trusted only when it starts left of 0.815w, the appraiser's head cuts digits off). Leading zero = cut off = dropped. Old scans have no counts: shows "count not read yet" until a species is scanned again.
+  - Sprites: src/sprites.ts, Showdown gen5 by name (regional -> "-galar" etc.), then base species, then PokeAPI by dex. Cached in data/cache/sprites/, missing ones remembered a week (not when offline). Couldn't read Austin John's sheet formulas (Sheets didn't render to the fetcher), so the image host there is unknown.
+  - Cleanup (Ben's rules): failed scans deleted after 24 h (image + row); stray upload files (no failed scan points to them) deleted after 2 h; runs at start, hourly, and on page load. Found 4 leftover screenshots from before issue 11 shipped; deleted on restart.
+  - Transfers: store.expireTransfers marks a scan the day it's first on the Transfer list (local date) and hides it from the next calendar day. Hidden, not deleted (scan count unchanged). If it leaves the Transfer list before midnight it's un-marked. Re-scanning the same Pokémon brings it back as a new scan.
+2026-11-23: Collection tab follow-ups (Ben).
+  - Collection shows the Keep list only (/api/collection still returns everything).
+  - Sorts: Pokédex, Recent, Dust needed, Dust no Elite TM (hides keepers whose build needs any Elite Fast or Charged TM), PvPoke rank (meta place). Tap again to flip. No build / no PvPoke rank always last.
+  - "This session" filter: src/session.ts. Session = uploads (scans + failed) since the server started, back to the last gap of > 1 h; > 1 h since the last upload = new empty session. "Close and open the app" = Lilycove server restart (on/off in Jarvis Power, Mac reboot; also my deploy restarts). App start floored to the second because upload times are stored to the second.
+2026-11-23: Collection + Scan page round 2 (hands-on, Ben's list).
+  - Collection filters at the top: All | This session, All | PvP (PvP = has a keep slot = the black rename tag), Any build | Fully built | Built, moves left. Built = at target species (dex) and level; fully built = built + Ben ticked "Mark moves done" (moves aren't on the appraisal screen, so it's a manual tick). Key = family + IVs + shadow, so it survives a re-scan after powering up/evolving. Moves done drops the 2nd-move cost from totals.
+  - Candy: tap the count to type it (candy and XL). Saved per family (typed_candy); newest wins between a typed count and a scan count.
+  - "What can I build?": dust (1.2m / 300k / 1,200,000) + Elite Fast/Charged TMs, saved on the Mac (settings table). src/plan.ts: greedy by PvPoke meta place, candy shared per family, unknown candy doesn't block (listed). Elite TMs go to built/buildable PvP Pokémon first, then meta place; a mon needing 2 charged TMs is skipped if only 1 left. Cards tagged "can build" / "use Fast TM" / "use Charged TM".
+  - Scan page: × on every Keep/Trade/Transfer row (soft delete: removed_scans, hidden from count/lists, Undo for 8 s) and on Failed scans (deletes the row + image). Keep rows have a collapsed summary (target · meta place · dust left / built · Elite TM) that opens to the full build facts (same code as Collection, candy edit + moves tick work there too).
+  - Search string now sits on top of the rename button (stacked) on both pages.
+2026-11-23: Highlights, "Better one found", Pokédex tab (hands-on, Ben).
+  - Single-digit keep rank (slot rank 1-9): brand accent ring (--primary, same as focus ring) around the sprite + rename on Collection, around the rename on the Scan page.
+  - place() now returns replaced: old bests pushed OFF the Keep list (old one now trade/transfer; one that found another slot isn't listed). Saved in `replaced` table on ingest. Scan page shows a purple "Better one found" card at the top with the old one's search string (big button) + Done (dismiss); the old row gets an "old best" tag. Card hides an old one once it's gone (hidden transfer / deleted) or kept again. /scan JSON has replaced; /live notify appends "get rid of old: <search>".
+  - Pokédex tab /pokedex: kinds Shiny, Lucky, 100%, XXL, XXS, Shadow, Purified (src/pokedex.ts DEX_KINDS). 954 released dex numbers from PvPoke gamemaster. Tap a spot: not known -> have -> missing. Filter All/Missing/Not known. Upload saves to data/pokedex-inbox/<dex>/ (gitignored, never auto-deleted) until the reader exists. Issue 12 = the screenshot reader (needs-ben: fixtures/pokedex/<dex>/ + expected.json). Reader plugs in as ServerOptions.readDex.
+2026-11-23: Issue 12 done (Pokédex reader) + more dexes + Scan views (hands-on, Ben).
+  - src/screen/dex.ts: every tile shows its 4-digit dex number (OCR). Caught = coloured sprite in the 200 px above the number; not caught = orange silhouette (hue 22-42, s .30-.62) or number only. Background = most common colour in the tile (gradient changes down the screen; a median beside the number failed on the right column). Light cream tile border ignored. Thresholds: >= 0.02 sprite share = have, < 0.005 = missing, between = left out. Fixtures: caught >= 0.047, missing <= 0.001.
+  - Left out (never guessed): tiles whose sprite area is under the tab bar (top of tab labels - 45 px), squeezed by the header (< 80 px visible), or whose number doesn't agree with a neighbour (dex ±1 beside / ±4 above-below).
+  - Selected dex = tab label nearest the screen centre (POKÉMON/SHINY/LUCKY/...). It wins over the dex picked on the page ("this was the Lucky Pokédex, saved there"). Labels for 100%/Mega/G-Max tabs are guesses (PERFECT, MEGA, GIGANTAMAX/G-MAX): check when Ben sends those screenshots.
+  - fixtures/pokedex/shiny/IMG_8901-8905 + expected.json (checked by eye): 5/5 exact. Inbox screenshots read at server start, deleted once read; unreadable ones stay.
+  - Dexes: added Pokémon (normal), Mega (species with a Mega/Primal form in PvPoke), G-Max (spots only from screenshots; PvPoke has no G-Max list).
+  - Scan page: Recent view (newest 60 scans with a keep/trade/transfer tag) and Keep / Trade / Transfer view (collapsible cards). View + open folds remembered per device (localStorage). Better one found card stays on top in both.
+
+2026-11-23 What can I build: collapsed by default, grouped Great/Ultra/Little Cup, chips show PvPoke meta rank; blue ring = league+typing with no fully built (built + moves done) Pokémon yet (plan.newTyping). Dust sort 'no Elite TM' now also hides shadows. Gotcha: an apostrophe inside page JS strings in server.ts template literals breaks the whole page script; the server tests don't catch it, so check the browser console.
+
+2026-11-23 Regular Pokédex fix, iPhone copy, Settings clear-all, greyed missing, evolve arrow (hands-on, Ben).
+  - Bug: Ben's regular-dex screenshots were saved into Shiny. The reader picked the tab label nearest the screen middle; POKÉMON is the first tab, so when selected it sits left and the unselected SHINY is near the middle. Now: selected tab = the filled orange pill (share of orange pixels inside the label box >= 0.3). Shiny fixtures still read shiny.
+  - Data repair: shiny marks written at/after 2026-11-24 05:58 UTC moved to normal (949 have / 43 missing), shiny re-read from fixtures IMG_8901-8905 (67 / 21). Backup: data/backups/before-dex-fix-2026-11-23.sqlite (gitignored).
+  - Copy on iPhone: page is plain http over Tailscale, so navigator.clipboard is undefined and taps did nothing. Fallback: hidden readonly textarea + execCommand('copy'). Button turns green "Copied ✓"; if both fail it says "press and hold to copy". Copy buttons 44 px tall.
+  - Settings (gear in the nav, /settings): "Clear all my Pokémon", hold 3 s (pointer events, cancels on release/leave). POST /api/clear-pokemon needs {confirm:'clear'}. Erases scans, failed scans, transfer marks, removed scans, replaced, moves done, and everything in data/uploads. Kept (Claude's call): Pokédex marks + inbox, never-transfer list, typed candy, dust/TMs.
+  - Pokédex: missing spots show the sprite greyed (grayscale, 30%) instead of a dashed number box.
+  - Collection: keepers that must evolve for their build show sprite -> down arrow -> target stage sprite greyed out. Build.targetId/targetDex added.
+2026-11-23 Tap "Lilycove Co" in the header = reload (phone has no refresh button when opened from the home screen). Pokédex filter renamed "Missing only"; chosen dex + filter remembered per device (localStorage) so a reload keeps them.
+
+2026-11-24 (Ben ask, not a Ralph round): iPhone copy + Collection grid.
+- Copy: square copy icon beside every copy string (CSS: phones <=700px only). Fallback rewritten to clipboard.js's iOS way (on-screen readonly textarea, focus+select, execCommand). If that still fails, a sheet shows the text pre-selected for press-and-hold Copy.
+- Collection List/Grid toggle (remembered per device). Grid = one tile per species (build target; Mega shares the plain tile). Bottom bar: Little yellow, Great silver, Ultra black, Master green. Solid = built, horizontal stripes = have one not built, empty = none. Tap tile -> #tile=Name: league rows with PvPoke place + list cards. Filter: league (any/L/G/U/M) x Top 10/25/50/100.
+- Master League: PRD scope is "functionally perfect" flagging only. Claude's call: functionally perfect = 15 atk, 14+ def/HP; shows on its final evolution (branches pick best PvPoke ML rank); built = at final stage and L50. PvPoke rankings-10000.json added as an OPTIONAL cache file.
+- Learning: collectionPage script is a normal template literal, so a JS \' must be written \\' in the TS source (SHARED_JS is String.raw, so there it's \'). Added a test that parses every page's inline script.

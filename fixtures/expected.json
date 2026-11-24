@@ -1,0 +1,618 @@
+{
+ "screenshots/pogo_screenshots1.PNG": {
+  "species": "Hatenna",
+  "speciesId": "hatenna",
+  "cp": 351,
+  "hp": 68,
+  "ivs": [
+   13,
+   12,
+   10
+  ],
+  "level": 15,
+  "nickname": "",
+  "weightKg": 3.31,
+  "heightM": 0.39,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots2.PNG": {
+  "species": "Meltan",
+  "speciesId": "meltan",
+  "cp": 634,
+  "hp": 90,
+  "ivs": [
+   11,
+   10,
+   14
+  ],
+  "level": 22,
+  "nickname": "",
+  "weightKg": 2.2,
+  "heightM": 0.14,
+  "size": "XS",
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots3.PNG": {
+  "species": "Gible",
+  "speciesId": "gible",
+  "cp": 454,
+  "hp": 84,
+  "ivs": [
+   10,
+   14,
+   13
+  ],
+  "level": 15,
+  "nickname": "",
+  "weightKg": 31.25,
+  "heightM": 0.85,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots4.PNG": {
+  "species": "Turtonator",
+  "speciesId": "turtonator",
+  "cp": 924,
+  "hp": 85,
+  "ivs": [
+   13,
+   13,
+   10
+  ],
+  "level": 15,
+  "nickname": "",
+  "weightKg": 95.07,
+  "heightM": 1.54,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots5.PNG": {
+  "species": "Bronzor",
+  "speciesId": "bronzor",
+  "cp": 245,
+  "hp": 82,
+  "ivs": [
+   13,
+   13,
+   11
+  ],
+  "level": 15,
+  "nickname": "Trade 26",
+  "weightKg": 50.2,
+  "heightM": 0.49,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots6.PNG": {
+  "species": "Charmander",
+  "speciesId": "charmander",
+  "cp": 12,
+  "hp": 12,
+  "ivs": [
+   5,
+   13,
+   15
+  ],
+  "level": 1,
+  "nickname": "",
+  "weightKg": 11.21,
+  "heightM": 0.68,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots7.PNG": {
+  "species": "Lucario",
+  "speciesId": "lucario",
+  "cp": 548,
+  "hp": 68,
+  "ivs": [
+   0,
+   5,
+   11
+  ],
+  "level": 8,
+  "nickname": "",
+  "weightKg": 41.56,
+  "heightM": 1.05,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots8.PNG": {
+  "species": "Hitmontop",
+  "speciesId": "hitmontop",
+  "cp": 898,
+  "hp": 77,
+  "ivs": [
+   11,
+   15,
+   13
+  ],
+  "level": 15,
+  "nickname": "",
+  "weightKg": 50.7,
+  "heightM": 1.4,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots9.PNG": {
+  "species": "Wailmer",
+  "speciesId": "wailmer",
+  "cp": 601,
+  "hp": 151,
+  "ivs": [
+   10,
+   13,
+   15
+  ],
+  "level": 15,
+  "nickname": "",
+  "weightKg": 116.31,
+  "heightM": 1.9,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots10.PNG": {
+  "failed": true,
+  "why": "CP digit hidden behind the Pokémon (27?0): 2769 vs 2790 both fit",
+  "nickname": ""
+ },
+ "screenshots/pogo_screenshots11.PNG": {
+  "species": "Jangmo-o",
+  "speciesId": "jangmo_o",
+  "cp": 137,
+  "hp": 44,
+  "ivs": [
+   1,
+   13,
+   10
+  ],
+  "level": 6,
+  "nickname": "",
+  "weightKg": 15.48,
+  "heightM": 0.46,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots12.PNG": {
+  "species": "Goomy",
+  "speciesId": "goomy",
+  "cp": 210,
+  "hp": 55,
+  "ivs": [
+   4,
+   1,
+   11
+  ],
+  "level": 9,
+  "nickname": "",
+  "weightKg": 3.81,
+  "heightM": 0.37,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots13.PNG": {
+  "species": "Frigibax",
+  "speciesId": "frigibax",
+  "cp": 889,
+  "hp": 125,
+  "ivs": [
+   3,
+   4,
+   12
+  ],
+  "level": 29,
+  "nickname": "",
+  "weightKg": 19.98,
+  "heightM": 0.51,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots14.PNG": {
+  "species": "Machamp",
+  "speciesId": "machamp",
+  "cp": 2144,
+  "hp": 148,
+  "ivs": [
+   12,
+   13,
+   15
+  ],
+  "level": 25,
+  "nickname": "",
+  "weightKg": 171.06,
+  "heightM": 1.89,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots15.PNG": {
+  "species": "Minior",
+  "speciesId": "minior_core",
+  "cp": 30,
+  "hp": 15,
+  "ivs": [
+   15,
+   2,
+   12
+  ],
+  "level": 1,
+  "nickname": "",
+  "weightKg": 0.46,
+  "heightM": 0.35,
+  "heaviest": true,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots16.PNG": {
+  "species": "Pumpkaboo",
+  "speciesId": "pumpkaboo_super",
+  "cp": 415,
+  "hp": 78,
+  "ivs": [
+   3,
+   15,
+   9
+  ],
+  "level": 13,
+  "nickname": "",
+  "weightKg": 9.51,
+  "heightM": 0.66,
+  "size": "XXL",
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots17.PNG": {
+  "species": "Lickitung",
+  "speciesId": "lickitung",
+  "cp": 16,
+  "hp": 19,
+  "ivs": [
+   4,
+   1,
+   3
+  ],
+  "level": 1,
+  "nickname": "",
+  "weightKg": 11.64,
+  "heightM": 0.64,
+  "size": "XS",
+  "lightest": true,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots18.PNG": {
+  "species": "Taillow",
+  "speciesId": "taillow",
+  "cp": 181,
+  "hp": 55,
+  "ivs": [
+   0,
+   9,
+   12
+  ],
+  "level": 10,
+  "nickname": "",
+  "weightKg": 1.74,
+  "heightM": 0.27,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots19.PNG": {
+  "species": "Lopunny",
+  "speciesId": "lopunny",
+  "cp": 500,
+  "hp": 73,
+  "ivs": [
+   3,
+   1,
+   15
+  ],
+  "level": 9.5,
+  "nickname": "L511",
+  "weightKg": 52.43,
+  "heightM": 1.46,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots20.PNG": {
+  "species": "Minior",
+  "speciesId": "minior_core",
+  "cp": 1824,
+  "hp": 118,
+  "ivs": [
+   15,
+   1,
+   7
+  ],
+  "level": 30,
+  "nickname": "",
+  "weightKg": 0.27,
+  "heightM": 0.28,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots21.PNG": {
+  "species": "Barboach",
+  "speciesId": "barboach",
+  "cp": 94,
+  "hp": 41,
+  "ivs": [
+   3,
+   14,
+   6
+  ],
+  "level": 5,
+  "nickname": "",
+  "weightKg": 0.87,
+  "heightM": 0.29,
+  "size": "XS",
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots22.PNG": {
+  "species": "Tauros",
+  "speciesId": "tauros",
+  "cp": 1454,
+  "hp": 113,
+  "ivs": [
+   9,
+   7,
+   4
+  ],
+  "level": 21,
+  "nickname": "",
+  "weightKg": 175.11,
+  "heightM": 1.96,
+  "size": "XL",
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots23.PNG": {
+  "species": "Roselia",
+  "speciesId": "roselia",
+  "cp": 1113,
+  "hp": 88,
+  "ivs": [
+   11,
+   15,
+   5
+  ],
+  "level": 22,
+  "nickname": "",
+  "weightKg": 1.56,
+  "heightM": 0.26,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots24.PNG": {
+  "species": "Grubbin",
+  "speciesId": "grubbin",
+  "cp": 493,
+  "hp": 88,
+  "ivs": [
+   0,
+   6,
+   12
+  ],
+  "level": 21,
+  "nickname": "",
+  "weightKg": 5.82,
+  "heightM": 0.46,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_screenshots25.PNG": {
+  "species": "Psyduck",
+  "speciesId": "psyduck",
+  "cp": 237,
+  "hp": 60,
+  "ivs": [
+   1,
+   2,
+   14
+  ],
+  "level": 9,
+  "nickname": "",
+  "weightKg": 28.54,
+  "heightM": 0.89,
+  "date": "11/14/2026",
+  "location": "MI, United States"
+ },
+ "videos/pogo_video.MP4": [
+  {
+   "species": "Magikarp",
+   "cp": 147,
+   "ivs": [
+    7,
+    8,
+    14
+   ]
+  },
+  {
+   "species": "Frigibax",
+   "cp": 77,
+   "ivs": [
+    0,
+    7,
+    4
+   ]
+  },
+  {
+   "species": "Barboach",
+   "cp": 254,
+   "ivs": [
+    6,
+    13,
+    15
+   ]
+  },
+  {
+   "species": "Swablu",
+   "cp": 545,
+   "ivs": [
+    4,
+    12,
+    11
+   ]
+  },
+  {
+   "species": "Drilbur",
+   "cp": 630,
+   "ivs": [
+    0,
+    14,
+    9
+   ]
+  },
+  {
+   "species": "Shellder",
+   "cp": 517,
+   "ivs": [
+    0,
+    2,
+    13
+   ]
+  },
+  {
+   "species": "Diglett",
+   "cp": 24,
+   "ivs": [
+    0,
+    11,
+    8
+   ]
+  },
+  {
+   "species": "Onix",
+   "cp": 657,
+   "ivs": [
+    3,
+    2,
+    9
+   ]
+  },
+  {
+   "species": "Piplup",
+   "cp": 13,
+   "ivs": [
+    10,
+    2,
+    11
+   ]
+  },
+  {
+   "species": "Klink",
+   "cp": 85,
+   "ivs": [
+    2,
+    11,
+    11
+   ]
+  },
+  {
+   "species": "Shellder",
+   "cp": 399,
+   "ivs": [
+    8,
+    5,
+    2
+   ]
+  },
+  {
+   "species": "Tinkatink",
+   "cp": 547,
+   "ivs": [
+    12,
+    8,
+    10
+   ]
+  }
+ ],
+ "screenshots/pogo_costume.PNG": {
+  "species": "Teddiursa",
+  "speciesId": "teddiursa",
+  "cp": 766,
+  "hp": 109,
+  "ivs": [
+   0,
+   2,
+   12
+  ],
+  "level": 24,
+  "nickname": "",
+  "weightKg": 12.74,
+  "heightM": 0.75,
+  "date": "11/5/2026",
+  "location": "MI, United States"
+ },
+ "screenshots/pogo_profilebackground.PNG": {
+  "species": "Zapdos",
+  "speciesId": "zapdos",
+  "cp": 1464,
+  "hp": 112,
+  "ivs": [
+   13,
+   10,
+   10
+  ],
+  "level": 15,
+  "nickname": "",
+  "weightKg": 36.07,
+  "heightM": 2,
+  "date": "6/6/2026",
+  "location": "IL, United States"
+ },
+ "screenshots/pogo_shadow.PNG": {
+  "species": "Kyogre",
+  "speciesId": "kyogre",
+  "cp": 2864,
+  "hp": 145,
+  "ivs": [
+   9,
+   15,
+   13
+  ],
+  "level": 25,
+  "nickname": "",
+  "weightKg": 325.2,
+  "date": "6/6/2026",
+  "location": "IL, United States"
+ },
+ "screenshots/pogo_shadow_specialbackground.PNG": {
+  "species": "Groudon",
+  "speciesId": "groudon",
+  "cp": 2310,
+  "hp": 130,
+  "ivs": [
+   13,
+   11,
+   14
+  ],
+  "level": 20,
+  "nickname": "Lumpy",
+  "weightKg": 779.85,
+  "date": "6/6/2026",
+  "location": "IL, United States"
+ },
+ "screenshots/pogo_shiny.PNG": {
+  "species": "Emboar",
+  "speciesId": "emboar",
+  "cp": 2877,
+  "hp": 198,
+  "ivs": [
+   9,
+   15,
+   9
+  ],
+  "level": 40,
+  "nickname": "Embuty",
+  "weightKg": 67.63,
+  "date": "7/3/2021",
+  "location": "CA, United States"
+ },
+ "screenshots/pogo_specialbackground.PNG": {
+  "failed": true,
+  "note": "CP unreadable on the bright Earth background; level arc lands between 21 and 21.5 -> 'CP covered: try again'"
+ }
+}

@@ -1,0 +1,14 @@
+node_modules/
+data/cache/
+data/uploads/
+*.sqlite
+ralph.log
+.DS_Store
+
+# Ben fixtures: large binaries stay local, not in git
+fixtures/**/*.PNG
+fixtures/**/*.png
+fixtures/**/*.MP4
+fixtures/**/*.mp4
+bin/
+data/pokedex-inbox/

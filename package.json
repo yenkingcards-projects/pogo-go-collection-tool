@@ -1,0 +1,23 @@
+{
+  "name": "lilycove_co",
+  "version": "1.0.0",
+  "description": "Lilycove Co",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "refresh": "tsx src/refresh.ts",
+    "rank": "tsx src/cli.ts",
+    "start": "tsx src/main.ts"
+  },
+  "type": "module",
+  "dependencies": {
+    "ohbem": "^1.5.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  }
+}
