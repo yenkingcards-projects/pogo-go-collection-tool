@@ -23,7 +23,9 @@ export interface Build {
   /** Target's types, lowercase ([] = unknown). */
   types: string[];
   level: number; cp: number; powerUp: Cost; evolveCandy?: number; secondMove?: { dust: number; candy: number };
-  moves: Move[]; total: Cost;
+  moves: Move[];
+  /** Off-meta build (Ben 2026-11-26). Same as moves when PvPoke has no other charged move. */
+  offMoves: Move[]; total: Cost;
   /** At the target species / at (or past) the target level. built = both. */
   stageDone: boolean; levelDone: boolean; built: boolean;
 }
@@ -221,6 +223,7 @@ export function createCollection({ store, ranks, meta, facts, build: bf }: { sto
             targetId: bf?.idOf(target.species) ?? target.species.toLowerCase().replace(/[^a-z0-9]+/g, '_'), targetDex: target.dex,
             metaRank: bf?.metaRank(slot.league, name, !!d.shadow), level: target.level, cp: target.cp, powerUp, evolveCandy, secondMove,
             moves: bf?.moves(slot.league, name, !!d.shadow) ?? [],
+            offMoves: bf?.offMoves(slot.league, name, !!d.shadow) ?? [],
             total: {
               dust: powerUp.dust + (left?.dust ?? 0),
               candy: powerUp.candy + (evolveCandy ?? 0) + (left?.candy ?? 0),

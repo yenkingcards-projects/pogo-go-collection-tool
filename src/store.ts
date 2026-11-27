@@ -1,5 +1,6 @@
 // Store: every scan saved to a local SQLite file (Node's built-in node:sqlite, no extra deps).
 import { DatabaseSync } from 'node:sqlite';
+import type { MetaChange, Snapshot } from './metawatch.js';
 
 export interface Scan {
   species: string; atk: number; def: number; sta: number; level: number;
@@ -8,7 +9,10 @@ export interface Scan {
 export interface SavedScan extends Scan { id: number; scannedAt: string }
 export interface FailedScan { id: number; file: string; reason: string; failedAt: string }
 export interface Store {
-  save(scan: Scan, detail?: unknown): number; count(): number; list(limit?: number): SavedScan[];
+  /** day: local "YYYY-MM-DD" the scan counts for (tests); default today. */
+  save(scan: Scan, detail?: unknown, day?: string): number; count(): number; list(limit?: number): SavedScan[];
+  /** Ben 2026-11-26: scans today (resets at local midnight) + lifetime. Never goes down (not on × or Clear all). */
+  scanStats(): { today: number; lifetime: number };
   /** Every scan's full appraisal (as saved), oldest first. */
   details(): { id: number; detail: any; scannedAt: string }[];
   /** Every upload's time (scans incl. transferred-away + failed scans), UTC "YYYY-MM-DD HH:MM:SS". */
@@ -42,6 +46,9 @@ export interface Store {
    * Kept: Pokédex marks, never-transfer list, typed candy, dust/TMs. Returns how many scans were erased.
    */
   clearPokemon(): number;
+  /** Meta watch (Ben 2026-11-26): last PvPoke snapshot + the changes found, newest first. Survives Clear all. */
+  metaSnapshot(): Snapshot | undefined; setMetaSnapshot(s: Snapshot): void;
+  addMetaChange(c: MetaChange): number; metaChanges(): { id: number; at: string; change: MetaChange; dismissed: boolean }[]; dismissMetaChange(id: number): void;
 }
 export type DexStatus = 'have' | 'missing';
 export interface Inventory { dust: number; fastTm: number; chargedTm: number }
@@ -61,12 +68,27 @@ export function openStore(path: string): Store {
     CREATE TABLE IF NOT EXISTS moves_done (key TEXT PRIMARY KEY);
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
     CREATE TABLE IF NOT EXISTS replaced (old_id INTEGER PRIMARY KEY, new_id INTEGER NOT NULL, at TEXT NOT NULL DEFAULT (datetime('now')), dismissed INTEGER NOT NULL DEFAULT 0);
-    CREATE TABLE IF NOT EXISTS dex_marks (kind TEXT NOT NULL, dex INTEGER NOT NULL, status TEXT NOT NULL, at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (kind, dex))`);
+    CREATE TABLE IF NOT EXISTS dex_marks (kind TEXT NOT NULL, dex INTEGER NOT NULL, status TEXT NOT NULL, at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (kind, dex));
+    CREATE TABLE IF NOT EXISTS scan_days (day TEXT PRIMARY KEY, n INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS meta_changes (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL DEFAULT (datetime('now')), change TEXT NOT NULL, dismissed INTEGER NOT NULL DEFAULT 0)`);
+  // First run with scan_days: count the scans already saved, per local day.
+  if (!db.prepare("SELECT 1 FROM settings WHERE key = 'scan_days_seeded'").get()) db.exec(`BEGIN;
+    INSERT OR IGNORE INTO scan_days (day, n) SELECT date(scanned_at, 'localtime'), COUNT(*) FROM scans GROUP BY 1;
+    INSERT INTO settings (key, value) VALUES ('scan_days_seeded', '1'); COMMIT;`);
+  const today = () => (db.prepare("SELECT date('now', 'localtime') AS d").get() as { d: string }).d;
+  const bump = db.prepare('INSERT INTO scan_days (day, n) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET n = n + 1');
   const live = 'id NOT IN (SELECT scan_id FROM removed_scans)';
   const insert = db.prepare('INSERT INTO scans (species, atk, def, sta, level, cp, name, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
   return {
-    save: (s, detail) =>
-      Number(insert.run(s.species, s.atk, s.def, s.sta, s.level, s.cp ?? null, s.name ?? null, detail === undefined ? null : JSON.stringify(detail)).lastInsertRowid),
+    save: (s, detail, day) => {
+      const id = Number(insert.run(s.species, s.atk, s.def, s.sta, s.level, s.cp ?? null, s.name ?? null, detail === undefined ? null : JSON.stringify(detail)).lastInsertRowid);
+      bump.run(day ?? today());
+      return id;
+    },
+    scanStats: () => {
+      const r = db.prepare('SELECT COALESCE(SUM(n), 0) AS life, COALESCE(SUM(CASE WHEN day = ? THEN n END), 0) AS today FROM scan_days').get(today()) as { life: number; today: number };
+      return { today: Number(r.today), lifetime: Number(r.life) };
+    },
     details: () =>
       (db.prepare('SELECT id, detail, scanned_at FROM scans WHERE detail IS NOT NULL AND ' + live + ' AND id NOT IN (SELECT scan_id FROM transfer_marks WHERE gone = 1) ORDER BY id').all() as any[])
         .map((r) => ({ id: r.id, detail: JSON.parse(r.detail), scannedAt: r.scanned_at })),
@@ -121,6 +143,14 @@ export function openStore(path: string): Store {
         DELETE FROM replaced; DELETE FROM moves_done; COMMIT;`);
       return n;
     },
+    metaSnapshot: () => {
+      const r = db.prepare("SELECT value FROM settings WHERE key = 'meta_snapshot'").get() as { value: string } | undefined;
+      return r ? JSON.parse(r.value) : undefined;
+    },
+    setMetaSnapshot: (snap) => void db.prepare("INSERT INTO settings (key, value) VALUES ('meta_snapshot', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(snap)),
+    addMetaChange: (c) => Number(db.prepare('INSERT INTO meta_changes (change) VALUES (?)').run(JSON.stringify(c)).lastInsertRowid),
+    metaChanges: () => (db.prepare('SELECT * FROM meta_changes ORDER BY id DESC LIMIT 20').all() as any[]).map((r) => ({ id: r.id, at: r.at, change: JSON.parse(r.change), dismissed: !!r.dismissed })),
+    dismissMetaChange: (id) => void db.prepare('UPDATE meta_changes SET dismissed = 1 WHERE id = ?').run(id),
     failedById: (id) => {
       const r = db.prepare('SELECT * FROM failed_scans WHERE id = ?').get(id) as any;
       return r ? { id: r.id, file: r.file, reason: r.reason, failedAt: r.failed_at } : undefined;

@@ -23,7 +23,7 @@ describe('web page', () => {
   let server: Server | undefined;
   afterEach(() => new Promise<void>((done) => (server ? server.close(() => done()) : done())));
 
-  it('home page shows "Pokémon scanned: N"', async () => {
+  it('home page shows today\'s scans with a refresh button, plus the lifetime total', async () => {
     const store = openStore(':memory:');
     store.save({ species: 'Piplup', atk: 1, def: 2, sta: 3, level: 5 });
     store.save({ species: 'Piplup', atk: 4, def: 5, sta: 6, level: 5 });
@@ -31,7 +31,11 @@ describe('web page', () => {
     server = await startServer(store, 0);
     const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/`);
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain('Pokémon scanned: 3');
+    const html = await res.text();
+    expect(html).toContain('Pokémon scanned today: 3');
+    expect(html).toContain('Lifetime: 3');
+    expect(html).toContain('id="reload"');
+    expect(html).not.toContain('screen recording');
   });
 });
 
@@ -145,33 +149,6 @@ describe('keep / trade / transfer on the page and in live mode', () => {
     for (const text of ['Keep (1)', 'Trade (0)', 'Transfer (1)', 'bulbasaur&amp;cp512', 'ivysaur&amp;cp700', 'G12 2']) expect(html).toContain(text);
     const live = await (await fetch(url(server, '/live'), { method: 'POST', body: new Uint8Array([1]) })).json();
     expect(live).toEqual({ ok: true, notify: 'KEEP Bulbasaur 1/15/15: G12 2, beats your G40', rename: 'G12 2' });
-  });
-});
-
-describe('batch video upload', () => {
-  let server: Server | undefined;
-  afterEach(() => new Promise<void>((done) => (server ? server.close(() => done()) : done())));
-  const url = (s: Server, p: string) => `http://127.0.0.1:${(s.address() as AddressInfo).port}${p}`;
-
-  it('POST /video starts a job; GET /video/<id> shows progress until every Pokémon is done', async () => {
-    const store = openStore(':memory:');
-    const split = async () => ['a.png', 'b.png', 'c.png'];
-    const read = (p: string) =>
-      p === 'b.png'
-        ? { ok: false as const, reason: 'Could not read ivs', partial: {} }
-        : { ok: true as const, scan: { species: p === 'a.png' ? 'Magikarp' : 'Onix', cp: 100, hp: 30, ivs: { atk: 1, def: 2, sta: 3 }, level: 5, nickname: '' } as any };
-    server = await startServer(store, 0, { read, split });
-    const { job } = await (await fetch(url(server, '/video?name=rec.mp4'), { method: 'POST', body: new Uint8Array([0]) })).json();
-    let status: any;
-    for (let i = 0; i < 50; i++) {
-      status = await (await fetch(url(server, `/video/${job}`))).json();
-      if (status.done) break;
-      await new Promise((r) => setTimeout(r, 20));
-    }
-    expect(status).toMatchObject({ done: true, total: 3, processed: 3, failed: 1 });
-    expect(status.results.map((r: any) => r.ok)).toEqual([true, false, true]);
-    expect(store.count()).toBe(2);
-    expect(store.failed()).toHaveLength(1);
   });
 });
 
@@ -397,15 +374,19 @@ describe('Pokédex reader hookup + Scan views (Ben, 2026-11-23)', () => {
 
   it('every page links to the Ready Set Ink Ko-fi; Settings has a Support card (Ben 2026-11-24)', async () => {
     server = await startServer(openStore(':memory:'), 0, { collection: { lists: () => ({ keep: [], trade: [], transfer: [] }), place: () => ({}) as any, entries: () => [] } });
-    for (const p of ['/', '/collection', '/pokedex', '/settings']) expect(await (await fetch(url(server, p))).text(), p).toContain('<footer class="support"><a href="https://ko-fi.com/J2E225ZV4T"');
+    for (const p of ['/', '/collection', '/pokedex', '/meta', '/teams', '/settings']) expect(await (await fetch(url(server, p))).text(), p).toContain('<footer class="support"><a href="https://ko-fi.com/J2E225ZV4T"');
     expect(await (await fetch(url(server, '/settings'))).text()).toContain('<h2>Support</h2>');
   });
 
   it('every page script parses (no broken quote escapes)', async () => {
     server = await startServer(openStore(':memory:'), 0, { collection: { lists: () => ({ keep: [], trade: [], transfer: [] }), place: () => ({}) as any, entries: () => [] } });
-    for (const p of ['/', '/collection', '/pokedex', '/settings']) {
+    for (const p of ['/', '/collection', '/pokedex', '/meta', '/teams', '/settings']) {
       const html = await (await fetch(url(server, p))).text();
-      for (const [, code] of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) expect(() => new Function(code), p).not.toThrow();
+      for (const [, code] of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+        expect(() => new Function(code), p).not.toThrow();
+        // window.top, location... can't be redeclared: "let top" at the top of a page script kills the whole script.
+        expect(code, p).not.toMatch(/^(let|const) (.*?[\s,])?(top|window|document|location)\s*=(?!=)/m);
+      }
     }
   });
 
@@ -458,8 +439,76 @@ describe('phone conveniences (Ben, 2026-11-23)', () => {
 
   it('tapping "Lilycove Co" reloads the page on every tab; Pokédex has a Missing only filter', async () => {
     server = await startServer(openStore(':memory:'), 0);
-    for (const p of ['/', '/collection', '/pokedex', '/settings']) expect(await (await fetch(url(server, p))).text()).toContain('class="brand" onclick="location.reload()');
+    for (const p of ['/', '/collection', '/pokedex', '/meta', '/teams', '/settings']) expect(await (await fetch(url(server, p))).text()).toContain('class="brand" onclick="location.reload()');
     const dex = await (await fetch(url(server, '/pokedex'))).text();
     expect(dex).toContain('data-v="missing">Missing only</button>');
+  });
+});
+
+describe('daily + lifetime scan count (Ben, 2026-11-26)', () => {
+  it('today counts scans since local midnight; lifetime never goes down, not even after Clear all', () => {
+    const store = openStore(':memory:');
+    store.save({ species: 'Piplup', atk: 1, def: 2, sta: 3, level: 5 });
+    store.save({ species: 'Piplup', atk: 1, def: 2, sta: 4, level: 5 });
+    expect(store.scanStats()).toEqual({ today: 2, lifetime: 2 });
+    store.clearPokemon();
+    expect(store.scanStats()).toEqual({ today: 2, lifetime: 2 });
+    store.save({ species: 'Piplup', atk: 1, def: 2, sta: 5, level: 5 });
+    expect(store.scanStats()).toEqual({ today: 3, lifetime: 3 });
+  });
+  it('a day that is over only adds to lifetime', () => {
+    const store = openStore(':memory:');
+    store.save({ species: 'Piplup', atk: 1, def: 2, sta: 3, level: 5 }, undefined, '2020-01-01');
+    store.save({ species: 'Piplup', atk: 1, def: 2, sta: 4, level: 5 });
+    expect(store.scanStats()).toEqual({ today: 1, lifetime: 2 });
+  });
+});
+
+describe('Pokédex: tap to mark + Meta tab (Ben, 2026-11-26)', () => {
+  let server: Server | undefined;
+  afterEach(() => new Promise<void>((done) => (server ? server.close(() => done()) : done())));
+  const url = (s: Server, p: string) => `http://127.0.0.1:${(s.address() as AddressInfo).port}${p}`;
+
+  it('Pokédex filters are All / Have / Missing', async () => {
+    server = await startServer(openStore(':memory:'), 0);
+    const dex = await (await fetch(url(server, '/pokedex'))).text();
+    for (const t of ['data-v="all"', 'data-v="have"', 'data-v="missing">Missing only</button>']) expect(dex).toContain(t);
+    expect(dex).not.toContain('Not known yet');
+  });
+
+  it('Meta tab: top picks per league, greyed when not had, with league + have filters', async () => {
+    const store = openStore(':memory:');
+    store.setDexMark('normal', 308, 'have');
+    const metaTop = () => ({ great: [{ rank: 1, id: 'medicham', name: 'Medicham', dex: 308, shadow: false }, { rank: 2, id: 'lanturn', name: 'Lanturn', dex: 171, shadow: false }], ultra: [], master: [], little: [] });
+    server = await startServer(store, 0, { metaTop });
+    const html = await (await fetch(url(server, '/meta'))).text();
+    for (const t of ['href="/meta" class="on"', 'data-lg="great"', 'data-lg="ultra"', 'data-lg="master"', 'data-lg="little"', 'data-v="have"', 'data-v="missing"', '"Medicham"']) expect(html).toContain(t);
+    const meta = JSON.parse(html.match(/<script id="data" type="application\/json">(.*?)<\/script>/)![1]);
+    expect(meta.top.great.map((m: any) => [m.name, m.have])).toEqual([['Medicham', true], ['Lanturn', false]]);
+  });
+});
+
+describe('Teams tab + meta alerts (Ben, 2026-11-26)', () => {
+  let server: Server | undefined;
+  afterEach(() => new Promise<void>((done) => (server ? server.close(() => done()) : done())));
+  const url = (s: Server, p: string) => `http://127.0.0.1:${(s.address() as AddressInfo).port}${p}`;
+  const change = { from: '2026-10-01', to: '2026-11-01', leagues: { great: { up: [{ id: 'lanturn', name: 'Lanturn', from: 40, to: 3 }], down: [{ id: 'medicham', name: 'Medicham', from: 2, to: 30 }] } }, moves: [{ id: 'ICE_PUNCH', name: 'Ice Punch', changes: [{ field: 'power', from: 50, to: 55 }] }] };
+
+  it('meta change alert on the Scan page and Teams tab until Got it', async () => {
+    const store = openStore(':memory:');
+    const id = store.addMetaChange(change as any);
+    server = await startServer(store, 0);
+    const home = await (await fetch(url(server, '/'))).text();
+    for (const t of ['Meta changed', 'Lanturn', 'Medicham', 'Ice Punch', `data-metadismiss="${id}"`, 'href="/teams"']) expect(home).toContain(t);
+    const teams = await (await fetch(url(server, '/teams'))).text();
+    for (const t of ['href="/teams" class="on"', 'Boosted ▲', 'Fell ▼', '#40 → #3', 'damage 50 → 55', 'data-v="rec"', 'aria-pressed="false">Off-meta<']) expect(teams).toContain(t);
+    await fetch(url(server, `/api/meta-changes/${id}/dismiss`), { method: 'POST' });
+    expect(await (await fetch(url(server, '/'))).text()).not.toContain('Meta changed');
+  });
+
+  it('Collection has a Recommended / Off-meta build switch', async () => {
+    server = await startServer(openStore(':memory:'), 0, { collection: { lists: () => ({ keep: [], trade: [], transfer: [] }), place: () => ({}) as any, entries: () => [] } });
+    const html = await (await fetch(url(server, '/collection'))).text();
+    for (const t of ['data-b="rec"', 'data-b="off"', 'Off-meta build']) expect(html).toContain(t);
   });
 });

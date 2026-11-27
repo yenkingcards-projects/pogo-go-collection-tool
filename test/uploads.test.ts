@@ -70,30 +70,6 @@ describe('server deletes uploads after use', () => {
     expect(existsSync(store.failed()[0].file)).toBe(true);
   });
 
-  it('video: video + frames folder deleted when the job ends; failed frames kept', async () => {
-    const dir = fresh(), store = openStore(':memory:');
-    const split = async (_video: string, out: string) => {
-      mkdirSync(out, { recursive: true });
-      return [1, 2, 3].map((n) => { const p = join(out, `frame-${n}.png`); writeFileSync(p, 'x'); return p; });
-    };
-    let call = 0;
-    server = await startServer(store, 0, { read: () => (call++ === 1 ? bad : okScan), split, uploadDir: dir });
-    const { job } = await (await fetch(url(server, '/video?name=rec.mp4'), { method: 'POST', body: new Uint8Array([1]) })).json();
-    for (let s; !(s = await (await fetch(url(server, `/video/${job}`))).json()).done;) await new Promise((r) => setTimeout(r, 10));
-    const left = readdirSync(dir);
-    expect(left).toHaveLength(1); // only the failed frame
-    expect(left[0]).toMatch(/rec\.mp4-frame-2\.png$/);
-    expect(store.failed()[0].file).toBe(join(dir, left[0]));
-  });
-
-  it('video that errors still deletes the video', async () => {
-    const dir = fresh();
-    server = await startServer(openStore(':memory:'), 0, { read: () => okScan, split: async () => { throw new Error('ffmpeg exited 1'); }, uploadDir: dir });
-    const { job } = await (await fetch(url(server, '/video?name=rec.mp4'), { method: 'POST', body: new Uint8Array([1]) })).json();
-    for (let s; !(s = await (await fetch(url(server, `/video/${job}`))).json()).done;) await new Promise((r) => setTimeout(r, 10));
-    expect(readdirSync(dir)).toEqual([]);
-  });
-
   it('footer shows space used by uploads', async () => {
     const dir = fresh();
     writeFileSync(join(dir, 'x.png'), Buffer.alloc(2_500_000));

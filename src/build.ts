@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readCache } from './data.js';
 import type { League } from './namer.js';
+import { offMetaMoveset } from './teams.js';
 
 export interface Move { id: string; name: string; fast: boolean; elite: boolean }
 /** Keep-slot leagues + Master League (grid view only: Master isn't a keep slot, PRD = "functionally perfect" flag). */
@@ -15,6 +16,8 @@ export interface BuildFacts {
   finalEvo(speciesId: string): { id: string; name: string; dex: number } | undefined;
   /** PvPoke's recommended moveset: fast, charged, charged. */
   moves(league: League, target: string, shadow: boolean): Move[];
+  /** Off-meta build (Ben 2026-11-26): same fast + main charged move, a less common second charged move for coverage. */
+  offMoves(league: League, target: string, shadow: boolean): Move[];
   secondMoveDust(target: string): number | undefined;
   /** Types of the target, lowercase ("water", "ground"). [] = unknown. */
   types(target: string): string[];
@@ -48,12 +51,13 @@ export function loadBuildFacts(cacheDir: string): BuildFacts {
   const byName = new Map<string, any>();
   for (const p of mons) if (!byName.has(p.speciesName.toLowerCase())) byName.set(p.speciesName.toLowerCase(), p);
   const moveName = new Map((gm.moves as any[]).map((m) => [m.moveId, m.name as string]));
+  const moveType = new Map((gm.moves as any[]).map((m) => [m.moveId, m.type as string]));
   // Master League file is optional (added 2026-11-24): missing = no Master ranks, never a crash.
   const rankings = Object.fromEntries((Object.keys(LEAGUE_CP) as AnyLeague[]).map((l) => {
     const file = `pvpoke-rankings-${LEAGUE_CP[l]}.json`;
     const list = (l === 'master' && !existsSync(join(cacheDir, file)) ? [] : readCache(cacheDir, file)) as any[];
-    return [l, new Map(list.map((r, i) => [r.speciesId, { place: i + 1, moveset: r.moveset as string[] }]))];
-  })) as Record<AnyLeague, Map<string, { place: number; moveset: string[] }>>;
+    return [l, new Map(list.map((r, i) => [r.speciesId, { place: i + 1, moveset: r.moveset as string[], charged: (r.moves?.chargedMoves ?? []) as { moveId: string; uses: number }[] }]))];
+  })) as Record<AnyLeague, Map<string, { place: number; moveset: string[]; charged: { moveId: string; uses: number }[] }>>;
 
   const idOf = (target: string) => byName.get(target.trim().toLowerCase())?.speciesId as string | undefined;
   // Megas missing from the league rankings fall back to the plain species.
@@ -75,16 +79,20 @@ export function loadBuildFacts(cacheDir: string): BuildFacts {
     for (const e of readCache(cacheDir, 'pogoapi-evolutions.json') as any[])
       evos.set(`${e.pokemon_id}|${e.form}`, (e.evolutions ?? []).map((x: any) => ({ dex: x.pokemon_id, form: x.form, candy: x.candy_required ?? 0 })));
 
+  function movesOf(league: League, target: string, shadow: boolean, off: boolean): Move[] {
+    const e = entry(league, target, shadow);
+    const p = byId.get(ranked(league, target) ?? '');
+    if (!e || !p) return [];
+    const elite = new Set<string>([...(p.eliteMoves ?? []), ...(p.legacyMoves ?? [])]);
+    const set = off ? offMetaMoveset(e.moveset, e.charged, (id) => moveType.get(id) ?? '') : e.moveset;
+    return set.map((id, i) => ({ id, name: moveName.get(id) ?? id, fast: i === 0, elite: elite.has(id) }));
+  }
+
   return {
     idOf,
     metaRank: (league, target, shadow) => entry(league, target, shadow)?.place,
-    moves(league, target, shadow) {
-      const e = entry(league, target, shadow);
-      const p = byId.get(ranked(league, target) ?? '');
-      if (!e || !p) return [];
-      const elite = new Set<string>([...(p.eliteMoves ?? []), ...(p.legacyMoves ?? [])]);
-      return e.moveset.map((id, i) => ({ id, name: moveName.get(id) ?? id, fast: i === 0, elite: elite.has(id) }));
-    },
+    moves: (league, target, shadow) => movesOf(league, target, shadow, false),
+    offMoves: (league, target, shadow) => movesOf(league, target, shadow, true),
     types(target) {
       const p = byName.get(target.trim().toLowerCase()) ?? byName.get(target.replace(/ \(Mega.*\)$/, '').trim().toLowerCase());
       return ((p?.types ?? []) as string[]).filter((t) => t && t !== 'none');

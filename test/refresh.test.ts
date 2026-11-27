@@ -52,12 +52,10 @@ describe('data date', () => {
 });
 
 describe('auto refresh', () => {
-  it('refreshes at start when data is older than the interval, then on schedule, and reloads', async () => {
+  it('refreshes at every start (Ben 2026-11-26), then on schedule, and reloads', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'pg-'));
     fill(dir, '{}');
-    const old = new Date(Date.now() - 2 * 86_400_000);
-    for (const n of names) utimesSync(join(dir, n), old, old);
-    let refreshes = 0, reloads = 0;
+    let refreshes = 0, reloads = 0; // data is brand new: still refreshed at start
     const stop = startAutoRefresh({
       dir, everyMs: 40,
       refresh: async (d) => { refreshes++; fill(d, '{}'); },
@@ -65,7 +63,7 @@ describe('auto refresh', () => {
     });
     await new Promise((r) => setTimeout(r, 110));
     stop();
-    expect(refreshes).toBeGreaterThanOrEqual(2); // stale at start + at least one tick
+    expect(refreshes).toBeGreaterThanOrEqual(2); // at start + at least one tick
     expect(reloads).toBe(refreshes);
   });
 

@@ -1,6 +1,6 @@
 # lilycove_co/issues - detail index
 
-Generated 2026-11-24. Back to [overview](../AGENT-INDEX.md). Every line has the full path from `lilycove_co/`.
+Generated 2026-11-26. Back to [overview](../AGENT-INDEX.md). Every line has the full path from `lilycove_co/`.
 
 **issues/** - 01: Rank + name from typed numbers - What to build: Type species, IVs, level → see ranks for every stage in Little/Great/Ultra and the renam...
 12 files, 12 code/docs. Top types: 12 .md.

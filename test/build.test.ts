@@ -66,7 +66,7 @@ describe('generations', () => {
 
 import { loadDexSpecies } from '../src/pokedex.js';
 describe('Pokédex species list', () => {
-  it('one base-form entry per released national dex number', () => {
+  it('one base-form entry per national dex number, all 1025 (Ben 2026-11-26: released or not)', () => {
     const list = loadDexSpecies(fileURLToPath(new URL('../data/cache/', import.meta.url)));
     expect(list[0]).toEqual({ dex: 1, name: 'Bulbasaur', id: 'bulbasaur' });
     expect(list.find((s) => s.dex === 3)?.mega).toBe(true); // Mega Venusaur
@@ -74,7 +74,8 @@ describe('Pokédex species list', () => {
     expect(list.find((s) => s.dex === 4)?.mega).toBeUndefined();
     expect(list.find((s) => s.dex === 52)?.name).toBe('Meowth');
     expect(new Set(list.map((s) => s.dex)).size).toBe(list.length);
-    expect(list.length).toBeGreaterThan(900);
+    expect(list.length).toBe(1025);
+    expect(list.at(-1)?.dex).toBe(1025);
   });
 });
 
@@ -89,5 +90,26 @@ describe('Master League + final evolution (grid view, Ben 2026-11-24)', () => {
     const eeveelutions = ['vaporeon', 'jolteon', 'flareon', 'espeon', 'umbreon', 'leafeon', 'glaceon', 'sylveon'];
     const best = eeveelutions.filter((id) => pos(10000, id) > 0).sort((a, b) => pos(10000, a) - pos(10000, b))[0];
     expect(facts.finalEvo('eevee')!.id).toBe(best);
+  });
+});
+
+import { loadMetaTop, haveMeta } from '../src/meta.js';
+describe('Meta tab (Ben 2026-11-26)', () => {
+  const top = loadMetaTop(fileURLToPath(new URL('../data/cache/', import.meta.url)));
+  it('top 100 per league from PvPoke, with dex numbers', () => {
+    expect(top.great).toHaveLength(100);
+    expect(top.great[0].rank).toBe(1);
+    expect(top.great.every((m) => m.dex > 0)).toBe(true);
+    expect(top.ultra).toHaveLength(100);
+    expect(top.little).toHaveLength(100);
+  });
+  it('have = Pokédex caught (Shadow dex for shadows) or a scanned one', () => {
+    const plain = { rank: 1, id: 'medicham', name: 'Medicham', dex: 308, shadow: false };
+    const shadow = { rank: 2, id: 'swampert_shadow', name: 'Swampert (Shadow)', dex: 260, shadow: true };
+    expect(haveMeta(plain, new Set([308]), new Set(), new Set())).toBe(true);
+    expect(haveMeta(plain, new Set(), new Set([308]), new Set())).toBe(false);
+    expect(haveMeta(shadow, new Set([260]), new Set(), new Set())).toBe(false);
+    expect(haveMeta(shadow, new Set(), new Set([260]), new Set())).toBe(true);
+    expect(haveMeta(shadow, new Set(), new Set(), new Set(['swampert_shadow']))).toBe(true);
   });
 });

@@ -1,14 +1,18 @@
-// Local web server: opened on the Mac and iPhone. Home page: scan count, upload, Keep/Trade/Transfer, Failed scans.
+// Local web server: opened on the Mac and iPhone. Home page: scan count (today + lifetime), upload, Keep/Trade/Transfer, Failed scans.
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve, sep } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import type { Store } from './store.js';
 import type { ReadResult, Appraisal } from './screen/read.js';
 import type { Collection, Item, Entry } from './collection.js';
 import type { Inventory } from './store.js';
 import { plan, planMon, type Plan } from './plan.js';
 import { DEX_KINDS, DEX_SPOTS, isDexKind, type DexKind, type DexRead, type DexSpecies } from './pokedex.js';
+import { META_LEAGUES, haveMeta, type MetaMon } from './meta.js';
+import { TEAM_LEAGUES, OFF_META_AFTER, buildTeams, type Candidate, type LeagueData, type Team } from './teams.js';
+import type { MetaChange } from './metawatch.js';
+import type { AnyLeague } from './build.js';
 import { getSprite } from './sprites.js';
 import { GENERATIONS } from './build.js';
 import { sessionStart } from './session.js';
@@ -20,8 +24,6 @@ export interface ServerOptions {
   uploadDir?: string;
   /** Keep slots + lists (issue 05). Without it the page just shows recent scans. */
   collection?: Collection;
-  /** Splits a recording into one image per Pokémon (src/video.ts). */
-  split?: (video: string, outDir: string) => Promise<string[]>;
   /** PvPoke data date for the footer (issue 08). */
   dataInfo?: () => { pvpokeDate: string; downloadedAt: string };
   /** Sprite cache folder (Collection tab). */
@@ -31,9 +33,11 @@ export interface ServerOptions {
   dexSpecies?: () => DexSpecies[];
   dexInbox?: string;
   readDex?: (path: string, kind: DexKind) => DexRead;
+  /** Meta tab: PvPoke top 100 per league (src/meta.ts). */
+  metaTop?: () => Record<AnyLeague, MetaMon[]>;
+  /** Teams tab: PvPoke data per league (src/teams.ts). */
+  leagueData?: () => LeagueData;
 }
-
-interface Job { total: number; processed: number; failed: number; done: boolean; error?: string; results: unknown[] }
 
 export const PORT = 4242;
 /** Ko-fi (Ben, 2026-11-24): bottom of every page + a card on Settings. */
@@ -81,6 +85,31 @@ function listsHtml(c: Collection, store: Store): string {
     `<div data-view="recent">${recentHtml}</div><div data-view="lists" hidden>${section('keep', 'Keep', keep, true) + section('trade', 'Trade', trade) + section('transfer', 'Transfer', transfer)}</div>`;
 }
 
+// Meta watch alerts (Ben 2026-11-26). Short card on the Scan page; the full list on the Teams tab.
+const LG_LABEL: Record<string, string> = { great: 'Great', ultra: 'Ultra', master: 'Master', little: 'Little' };
+const FIELD: Record<string, string> = { power: 'damage', energy: 'energy cost', energyGain: 'energy gain', turns: 'turns', effect: 'effect' };
+const placeTxt = (n?: number) => (n ? `#${n}` : 'unranked');
+function moveLine(m: MetaChange['moves'][number]) {
+  return `<li><b>${esc(m.name)}</b>: ${m.changes.map((c) => `${FIELD[c.field] ?? c.field} ${esc(c.from)} → ${esc(c.to)}`).join(', ')}</li>`;
+}
+function metaAlertCard(c: { id: number; change: MetaChange }, full: boolean): string {
+  const ch = c.change;
+  const leagues = (Object.entries(ch.leagues) as [string, { up: any[]; down: any[] }][]);
+  const shift = (x: { name: string; from?: number; to?: number }) => `<li>${esc(x.name)} <span class="meta">${placeTxt(x.from)} → ${placeTxt(x.to)}</span></li>`;
+  const body = full
+    ? leagues.map(([l, d]) => `<h3 class="genh">${LG_LABEL[l]} League</h3><div class="shifts"><div><p class="label up">Boosted ▲</p><ul class="facts">${d.up.map(shift).join('') || '<li>None</li>'}</ul></div>` +
+        `<div><p class="label down">Fell ▼</p><ul class="facts">${d.down.map(shift).join('') || '<li>None</li>'}</ul></div></div>`).join('') +
+      (ch.moves.length ? `<h3 class="genh">Move changes (${ch.moves.length})</h3><ul class="facts">${ch.moves.map(moveLine).join('')}</ul>` : '')
+    : (() => {
+        const g = ch.leagues.great ?? leagues[0]?.[1];
+        const names = (xs: { name: string }[] = []) => xs.slice(0, 4).map((x) => esc(x.name)).join(', ') || 'none';
+        return `<ul class="facts">${g ? `<li><span class="up">▲ Boosted:</span> ${names(g.up)}</li><li><span class="down">▼ Fell:</span> ${names(g.down)}</li>` : ''}` +
+          `${ch.moves.length ? `<li>${ch.moves.length} move${ch.moves.length > 1 ? 's' : ''} changed: ${ch.moves.slice(0, 4).map((m) => esc(m.name)).join(', ')}${ch.moves.length > 4 ? '…' : ''}</li>` : ''}</ul>`;
+      })();
+  return `<section class="card alertcard metaalert" data-meta="${c.id}"><div class="who"><h2>Meta changed</h2><button class="mv" data-metadismiss="${c.id}">Got it</button></div>` +
+    `<p class="why">PvPoke data ${esc(ch.from)} → ${esc(ch.to)}${full ? '. Places are PvPoke rankings (top 100 shown).' : '. <a href="/teams">See everything and your teams →</a>'}</p>${body}</section>`;
+}
+
 /** Kept Pokémon + planner for the Collection tab (and the Scan page's collapsed facts). */
 export interface Keepers { entries: Entry[]; inventory: Inventory; plan: Plan }
 function keepers(store: Store, c?: Collection): Keepers {
@@ -98,6 +127,8 @@ const num = (n) => Number(n).toLocaleString('en-US');
 const short = (n) => n >= 1e6 ? (Math.round(n / 1e4) / 100) + 'M' : n >= 1000 ? Math.round(n / 1000) + 'k' : String(n);
 const known = (n) => n !== undefined && n !== null;
 let PLAN = { build: [], fastTm: [], chargedTm: [], candyUnknown: [] };
+// Recommended vs off-meta build (Ben 2026-11-26), remembered on this device. Off-meta = a less common 2nd charged move.
+let BUILD_VIEW = (() => { try { return localStorage.getItem('buildView') === 'off' ? 'off' : 'rec'; } catch { return 'rec'; } })();
 function editBtn(e, kind, have) {
   return '<button class="edit" data-fam="' + esc(e.family) + '" data-kind="' + kind + '" data-val="' + (known(have) ? have : '') + '" title="Tap to type">' + (known(have) ? num(have) : 'tap to type') + '</button>';
 }
@@ -118,7 +149,8 @@ function factsHtml(e) {
   const b = e.build; let f = '';
   if (b) {
     f += '<li><b>' + L[b.league] + b.ivRank + ' ' + esc(b.target) + (b.mega ? ' (mega)' : '') + '</b> · ' + (b.metaRank ? '#' + b.metaRank + ' in ' + LEAGUE[b.league] + ' League meta' : 'not in PvPoke ' + LEAGUE[b.league] + ' rankings') + '</li>';
-    if (b.moves.length) f += '<li>Moves: ' + b.moves.map((m) => esc(m.name) + (m.elite ? ' <span class="tag elite">Elite ' + (m.fast ? 'Fast' : 'Charged') + ' TM</span>' : '')).join(' · ') +
+    const mv = BUILD_VIEW === 'off' && b.offMoves && b.offMoves.length ? b.offMoves : b.moves;
+    if (mv.length) f += '<li>' + (BUILD_VIEW === 'off' ? 'Off-meta build' : 'Recommended build') + ': ' + mv.map((m) => esc(m.name) + (m.elite ? ' <span class="tag elite">Elite ' + (m.fast ? 'Fast' : 'Charged') + ' TM</span>' : '')).join(' · ') +
       ' <button class="mv" data-key="' + esc(e.movesKey) + '" aria-pressed="' + !!e.movesDone + '">' + (e.movesDone ? 'Moves done' : 'Mark moves done') + '</button></li>';
     if (!b.stageDone && b.evolveCandy) f += '<li>Evolve: ' + num(b.evolveCandy) + ' candy</li>';
     f += b.powerUp.dust ? '<li>Power up to L' + b.level + ' (CP ' + num(b.cp) + '): <b>' + num(b.powerUp.dust) + ' dust</b> · ' + num(b.powerUp.candy) + ' candy' + (b.powerUp.xl ? ' · ' + num(b.powerUp.xl) + ' XL' : '') + '</li>'
@@ -222,6 +254,10 @@ main{max-width:760px;margin:0 auto;padding:var(--s-lg) var(--s-md) var(--s-xxl)}
 .hero{background:var(--canvas);border:1px solid var(--hairline);border-radius:var(--r-lg);padding:var(--s-lg);margin-bottom:var(--s-lg)}
 .label{font-size:14px;line-height:1.43;letter-spacing:-0.224px;color:var(--ink-muted-48);margin:0}
 .count{font-size:56px;font-weight:600;line-height:1.07;letter-spacing:-0.28px;margin:4px 0 var(--s-lg)}
+.countrow{display:flex;align-items:center;gap:var(--s-sm)}.countrow .count{margin:4px 0}
+.reload{width:44px;height:44px;border-radius:50%;border:1px solid var(--hairline);background:#fff;font:400 22px/1 var(--font);color:var(--ink);cursor:pointer;flex:none}
+.reload:active{transform:rotate(90deg)}
+.life{margin:0 0 var(--s-lg)}.life b{color:var(--ink);font-weight:600}
 .btns{display:flex;flex-wrap:wrap;gap:var(--s-xs)}
 .btn{display:inline-flex;align-items:center;min-height:44px;padding:11px 22px;border-radius:var(--r-pill);font:400 17px/1.24 var(--font);letter-spacing:-0.374px;cursor:pointer;border:1px solid var(--primary)}
 .btn.pri{background:var(--primary);color:#fff}.btn.sec2{background:transparent;color:var(--primary)}
@@ -321,7 +357,25 @@ h2{font-size:21px;font-weight:600;line-height:1.19;letter-spacing:.231px;margin:
 .tile{position:relative;aspect-ratio:1;border:1px solid var(--hairline);border-radius:var(--r-sm);background:#fff;cursor:pointer;padding:0;font:600 13px/1 var(--font);color:var(--ink-muted-48)}
 .tile img{width:100%;height:100%;image-rendering:pixelated}
 .tile span{position:absolute;left:4px;bottom:3px;font-size:10px;font-weight:400}
-.tile.unknown{opacity:.45}
+.tile .ck{position:absolute;right:3px;top:3px;width:16px;height:16px;border-radius:50%;background:var(--primary);color:#fff;font:600 10px/16px var(--font);font-style:normal;text-align:center}
+.shifts{display:grid;grid-template-columns:1fr 1fr;gap:var(--s-md)}
+.up{color:#1a7f37;font-weight:600}.down{color:#c0352b;font-weight:600}
+.team{border:1px solid var(--hairline);border-radius:var(--r-md);padding:var(--s-sm) var(--s-md);margin-top:var(--s-md);background:#fff}
+.team h3{font-size:15px;margin:var(--s-xs) 0}
+.tm{display:flex;gap:var(--s-sm);align-items:center;padding:6px 0;border-top:1px solid var(--hairline)}
+.tm img{width:56px;height:56px;image-rendering:pixelated;flex:none}
+.tm .role{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-muted-48)}
+.tm .nm{font-weight:600}
+.tm .mvs{font-size:13px;color:var(--ink-muted-48)}
+.ty{display:inline-block;font-size:10px;border-radius:6px;padding:1px 5px;margin-left:3px;background:var(--canvas-parchment);color:var(--ink)}
+.metagrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px}
+.mtile{position:relative;border:1px solid var(--hairline);border-radius:var(--r-sm);background:var(--canvas-parchment);padding:4px 4px 6px;text-align:center;font-size:11px;line-height:1.25}
+.mtile img{width:100%;aspect-ratio:1;image-rendering:pixelated;display:block}
+.mtile .rk,.mtile .sh{position:absolute;top:3px;font-size:10px;font-weight:600;background:rgba(255,255,255,.85);border-radius:6px;padding:1px 4px}
+.mtile .rk{left:3px;color:var(--ink-muted-48)}.mtile .sh{right:3px;color:#7a3fc2}
+.mtile .nm{display:block;white-space:normal;overflow-wrap:anywhere;min-height:2.5em}
+.mtile.missing{background:#fafafa;border-style:dashed;border-color:#c8c8c8;color:var(--ink-muted-48)}
+.mtile.missing img{filter:grayscale(1);opacity:.3}
 .tile.missing{border:1px dashed #c8c8c8;background:#fafafa}
 .tile.missing img{filter:grayscale(1);opacity:.3}
 .tile.have{background:var(--canvas-parchment)}
@@ -372,10 +426,12 @@ a.btn{text-decoration:none}
 footer{font-size:12px;line-height:1.5;letter-spacing:-0.12px;color:var(--ink-muted-48);text-align:center;margin-top:var(--s-xl)}
 `;
 
-const nav = (on: 'scan' | 'collection' | 'pokedex' | 'settings') =>
+const nav = (on: 'scan' | 'collection' | 'pokedex' | 'meta' | 'teams' | 'settings') =>
   `<header class="bar"><button class="brand" onclick="location.reload()" title="Tap to refresh" aria-label="Lilycove Co, tap to refresh">Lilycove Co</button><nav class="tabs"><a href="/"${on === 'scan' ? ' class="on" aria-current="page"' : ''}>Scan</a>` +
   `<a href="/collection"${on === 'collection' ? ' class="on" aria-current="page"' : ''}>Collection</a>` +
   `<a href="/pokedex"${on === 'pokedex' ? ' class="on" aria-current="page"' : ''}>Pokédex</a>` +
+  `<a href="/meta"${on === 'meta' ? ' class="on" aria-current="page"' : ''}>Meta</a>` +
+  `<a href="/teams"${on === 'teams' ? ' class="on" aria-current="page"' : ''}>Teams</a>` +
   `<a href="/settings" class="gear${on === 'settings' ? ' on" aria-current="page' : ''}" aria-label="Settings" title="Settings">⚙︎</a></nav></header>`;
 
 const head = (title: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -395,16 +451,18 @@ function homePage(store: Store, uploadDir: string, collection?: Collection, data
       (kept ? `<form class="retry" data-id="${f.id}"><input name="cp" inputmode="numeric" pattern="[0-9]*" placeholder="Type the CP" aria-label="CP" required><button class="btn pri">Retry</button></form>`
         : '<p class="why">Image deleted, scan it again</p>') + '</div></li>';
   }).join('');
-  const count = store.count();
+  // Ben 2026-11-26: today's count (resets at midnight) with a refresh button beside it, plus a lifetime score.
+  const { today, lifetime } = store.scanStats();
   return `${head('Lilycove Co')}
 ${nav('scan')}
 <main>
+${(() => { const c = store.metaChanges().find((x) => !x.dismissed); return c ? metaAlertCard(c, false) : ''; })()}
 <section class="hero">
-<p class="label">Pokémon scanned</p>
-<p class="count" aria-label="Pokémon scanned: ${count}">${count}</p>
+<p class="label">Pokémon scanned today</p>
+<div class="countrow"><p class="count" aria-label="Pokémon scanned today: ${today}">${today}</p><button class="reload" id="reload" onclick="location.reload()" aria-label="Refresh page" title="Refresh">↻</button></div>
+<p class="label life" aria-label="Lifetime: ${lifetime}">Lifetime: <b>${lifetime.toLocaleString('en-US')}</b></p>
 <div class="btns">
 <label class="btn pri" id="up">Add screenshots<input type="file" name="f" accept="image/*" multiple></label>
-<label class="btn sec2" id="vid">Add screen recording<input type="file" name="v" accept="video/*"></label>
 </div>
 <progress id="bar" max="1" value="0" hidden></progress>
 <p id="msg" aria-live="polite"></p>
@@ -463,6 +521,8 @@ function showToast(text, undo) {
   clearTimeout(reloadTimer); reloadTimer = setTimeout(() => location.reload(), 8000);
 }
 document.addEventListener('click', async (e) => {
+  const md = e.target.closest('[data-metadismiss]');
+  if (md) { await fetch('/api/meta-changes/' + md.dataset.metadismiss + '/dismiss', { method: 'POST' }); md.closest('.metaalert').remove(); return; }
   const x = e.target.closest('[data-dismiss]');
   if (x) { await fetch('/api/replaced/' + x.dataset.dismiss + '/dismiss', { method: 'POST' }); x.closest('.row').remove(); if (!document.querySelector('.alertcard .row')) document.querySelector('.alertcard')?.remove(); return; }
   const d = e.target.closest('.del'); if (!d) return;
@@ -495,20 +555,6 @@ document.querySelector('#up input').onchange = async (e) => {
   }
   location.reload();
 };
-document.querySelector('#vid input').onchange = async (e) => {
-  const file = e.target.files[0]; if (!file) return;
-  const msg = document.getElementById('msg'), bar = document.getElementById('bar');
-  msg.textContent = 'Uploading ' + file.name + '…'; bar.hidden = false; bar.removeAttribute('value');
-  const { job } = await (await fetch('/video?name=' + encodeURIComponent(file.name), { method: 'POST', body: file })).json();
-  for (;;) {
-    const s = await (await fetch('/video/' + job)).json();
-    if (s.total) { bar.max = s.total; bar.value = s.processed; msg.textContent = 'Pokémon ' + s.processed + ' of ' + s.total + (s.failed ? ' (' + s.failed + ' failed)' : ''); }
-    else msg.textContent = 'Finding Pokémon in the video…';
-    if (s.done) { msg.textContent = s.error ? 'Video failed: ' + s.error : 'Done: ' + s.processed + ' Pokémon, ' + s.failed + ' failed'; break; }
-    await new Promise((r) => setTimeout(r, 700));
-  }
-  setTimeout(() => location.reload(), 1200);
-};
 </script>
 </body></html>`;
 }
@@ -524,6 +570,7 @@ ${nav('collection')}
 <main>
 <section class="card tools">
 <div class="seg" id="mode" role="group" aria-label="View"><button data-m="list" class="on" aria-pressed="true">List</button><button data-m="grid" aria-pressed="false">Grid</button></div>
+<div class="seg" id="bview" role="group" aria-label="Build"><button data-b="rec" aria-pressed="true">Recommended build</button><button data-b="off" aria-pressed="false">Off-meta build</button></div>
 <div class="frow">${seg('when', 'When scanned', [['all', 'All'], ['session', 'This session']])}${seg('kind', 'Which', [['all', 'All'], ['pvp', 'PvP']])}</div>
 ${seg('build', 'Build', [['all', 'Any build'], ['built', 'Fully built'], ['moves', 'Built, moves left']])}
 <input class="search" id="q" type="search" placeholder="Search species" aria-label="Search species" autocomplete="off">
@@ -722,6 +769,13 @@ document.getElementById('mode').addEventListener('click', (e) => {
   if (tileFromHash()) history.replaceState(null, '', location.pathname + location.search);
   setMode(b.dataset.m); render();
 });
+function markBuildView() { document.querySelectorAll('#bview button').forEach((x) => { x.classList.toggle('on', x.dataset.b === BUILD_VIEW); x.setAttribute('aria-pressed', String(x.dataset.b === BUILD_VIEW)); }); }
+markBuildView();
+document.getElementById('bview').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  BUILD_VIEW = b.dataset.b; try { localStorage.setItem('buildView', BUILD_VIEW); } catch {}
+  markBuildView(); render();
+});
 const pick = (id, attr, set) => document.getElementById(id).addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   set(b.dataset[attr]); document.querySelectorAll('#' + id + ' button').forEach((x) => x.classList.toggle('on', x === b)); render();
@@ -741,8 +795,8 @@ refresh();
 </body></html>`;
 }
 
-// Pokédex tab: one grid per special dex. Tap a spot: not known -> have -> missing -> not known.
-// Screenshots go to the inbox; once issue 12's reader is wired in (readDex) they fill the marks automatically.
+// Pokédex tab: one grid per dex, every spot 1-1025. Tap a spot = have / don't have (Ben 2026-11-26). No mark = don't have (grey).
+// Screenshots fill the marks automatically (readDex, issue 12).
 function pokedexPage(species: DexSpecies[], marks: Record<string, Record<number, string>>, inboxCount: Record<string, number>, reader: boolean): string {
   return `${head('Pokédex · Lilycove Co')}
 ${nav('pokedex')}
@@ -750,7 +804,8 @@ ${nav('pokedex')}
 <section class="card tools">
 <div class="dexkinds" id="kinds" role="group" aria-label="Which Pokédex">${DEX_KINDS.map((k, i) => `<button data-kind="${k.key}"${i ? '' : ' class="on"'}>${k.label}</button>`).join('')}</div>
 <p class="count2" id="n"></p>
-<div class="seg" id="show" role="group" aria-label="Show"><button data-v="all" class="on">All</button><button data-v="missing">Missing only</button><button data-v="unknown">Not known yet</button></div>
+<div class="seg" id="show" role="group" aria-label="Show"><button data-v="all" class="on">All</button><button data-v="have">Have</button><button data-v="missing">Missing only</button></div>
+<p class="why">Tap a Pokémon to mark it caught. Tap again to unmark.</p>
 <div class="btns"><label class="btn sec2" id="up">Add Pokédex screenshots<input type="file" accept="image/*" multiple></label></div>
 <p id="msg" class="why" aria-live="polite"></p>
 </section>
@@ -764,7 +819,7 @@ let kind = '${DEX_KINDS[0].key}', show = 'all';
 // Which dex + filter: remembered on this device, so a refresh (tap Lilycove Co) keeps Missing only.
 const mem = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 if (LABEL[mem.get("dexKind")]) kind = mem.get("dexKind");
-if (["all", "missing", "unknown"].includes(mem.get("dexShow"))) show = mem.get("dexShow");
+if (["all", "have", "missing"].includes(mem.get("dexShow"))) show = mem.get("dexShow");
 function mark() {
   document.querySelectorAll("#kinds button").forEach((x) => x.classList.toggle("on", x.dataset.kind === kind));
   document.querySelectorAll("#show button").forEach((x) => { x.classList.toggle("on", x.dataset.v === show); x.setAttribute("aria-pressed", String(x.dataset.v === show)); });
@@ -780,10 +835,10 @@ function spots() {
 }
 function render() {
   const m = D.marks[kind] || {}, list = spots();
-  const st = (s) => m[s.dex] || 'unknown';
-  const have = list.filter((s) => st(s) === 'have').length, missing = list.filter((s) => st(s) === 'missing').length;
+  const st = (s) => (m[s.dex] === 'have' ? 'have' : 'missing');
+  const have = list.filter((s) => st(s) === 'have').length;
   const waiting = D.inboxCount[kind] || 0;
-  document.getElementById('n').textContent = LABEL[kind] + ' Pokédex · ' + have + ' have · ' + missing + ' missing' + (D.spots[kind] === 'known' ? '' : ' · ' + (list.length - have - missing) + ' not known yet') +
+  document.getElementById('n').textContent = LABEL[kind] + ' Pokédex · ' + have + ' of ' + list.length + ' have · ' + (list.length - have) + ' missing' +
     (waiting ? ' · ' + waiting + ' screenshot' + (waiting > 1 ? 's' : '') + ' waiting for the reader' : '');
   document.querySelector('#up').firstChild.textContent = 'Add ' + LABEL[kind] + ' Pokédex screenshots';
   let html = '', g = 0, open = false;
@@ -792,8 +847,8 @@ function render() {
     if (show !== 'all' && k !== show) continue;
     const gg = gen(s.dex);
     if (gg.n !== g) { if (open) html += '</div>'; g = gg.n; html += '<h3 class="genh">' + g + ' ' + gg.region + '</h3><div class="dexgrid">'; open = true; }
-    html += '<button class="tile ' + k + '" data-dex="' + s.dex + '" title="#' + s.dex + ' ' + esc(s.name) + ': ' + (k === 'unknown' ? 'not known yet' : k) + '" aria-label="#' + s.dex + ' ' + esc(s.name) + ', ' + (k === 'unknown' ? 'not known yet' : k) + '">' +
-      (k === 'unknown' ? s.dex : '<img src="/sprite/' + encodeURIComponent(s.id) + '?dex=' + s.dex + '" alt="" loading="lazy"><span>' + s.dex + '</span>') + '</button>';
+    html += '<button class="tile ' + k + '" data-dex="' + s.dex + '" aria-pressed="' + (k === 'have') + '" title="#' + s.dex + ' ' + esc(s.name) + ': ' + k + '" aria-label="#' + s.dex + ' ' + esc(s.name) + ', ' + k + '">' +
+      '<img src="/sprite/' + encodeURIComponent(s.id) + '?dex=' + s.dex + '" alt="" loading="lazy"><span>' + s.dex + '</span>' + (k === 'have' ? '<i class="ck" aria-hidden="true">✓</i>' : '') + '</button>';
   }
   if (open) html += '</div>';
   document.getElementById('grid').innerHTML = html || '<p class="empty">' + (D.spots[kind] === 'known' && !list.length ? 'The ' + LABEL[kind] + ' Pokédex fills in from your screenshots.' : 'Nothing here.') + '</p>';
@@ -806,11 +861,10 @@ document.getElementById('show').addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   show = b.dataset.v; mem.set("dexShow", show); mark(); render();
 });
-const NEXT = { unknown: 'have', have: 'missing', missing: null };
 document.getElementById('grid').addEventListener('click', async (e) => {
   const t = e.target.closest('.tile'); if (!t) return;
-  const dex = Number(t.dataset.dex), m = (D.marks[kind] = D.marks[kind] || {}), status = NEXT[m[dex] || 'unknown'];
-  if (status) m[dex] = status; else delete m[dex];
+  const dex = Number(t.dataset.dex), m = (D.marks[kind] = D.marks[kind] || {}), status = m[dex] === 'have' ? 'missing' : 'have';
+  m[dex] = status;
   render();
   await fetch('/api/dex', { method: 'POST', body: JSON.stringify({ kind, dex, status }) });
 });
@@ -826,6 +880,122 @@ document.querySelector('#up input').onchange = async (e) => {
 render();
 </script>
 </body></html>`;
+}
+
+// Meta tab (Ben 2026-11-26): PvPoke top 100 per league; greyed when Ben doesn't have it. League / have / top N filters + search.
+function metaPage(top: Record<AnyLeague, (MetaMon & { have: boolean })[]>): string {
+  return `${head('Meta · Lilycove Co')}
+${nav('meta')}
+<main>
+<section class="card tools">
+<div class="dexkinds" id="lg" role="group" aria-label="League">${META_LEAGUES.map((l, i) => `<button data-lg="${l.key}"${i ? '' : ' class="on"'}>${l.label}</button>`).join('')}</div>
+<p class="count2" id="n"></p>
+<div class="seg" id="show" role="group" aria-label="Show"><button data-v="all" class="on">All</button><button data-v="have">Have</button><button data-v="missing">Don't have</button></div>
+<div class="seg" id="top" role="group" aria-label="Top">${[10, 25, 50, 100].map((n) => `<button data-top="${n}"${n === 100 ? ' class="on"' : ''}>Top ${n}</button>`).join('')}</div>
+<input class="search" id="q" type="search" placeholder="Search Pokémon" aria-label="Search Pokémon" autocomplete="off">
+<p class="why">PvPoke rankings. Grey = you don't have it (not caught in your Pokédex, or the Shadow Pokédex for shadows, and not scanned).</p>
+</section>
+<section class="card" id="grid"></section>
+${SUPPORT}</main>
+<script id="data" type="application/json">${pageJson({ top, leagues: META_LEAGUES })}</script>
+<script>
+const D = JSON.parse(document.getElementById('data').textContent);
+const mem = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+let lg = D.top[mem.get('metaLg')] ? mem.get('metaLg') : 'great', show = ['all', 'have', 'missing'].includes(mem.get('metaShow')) ? mem.get('metaShow') : 'all', topN = Number(mem.get('metaTop')) || 100;
+function mark() {
+  document.querySelectorAll('#lg button').forEach((b) => b.classList.toggle('on', b.dataset.lg === lg));
+  document.querySelectorAll('#show button').forEach((b) => { b.classList.toggle('on', b.dataset.v === show); b.setAttribute('aria-pressed', String(b.dataset.v === show)); });
+  document.querySelectorAll('#top button').forEach((b) => { b.classList.toggle('on', Number(b.dataset.top) === topN); b.setAttribute('aria-pressed', String(Number(b.dataset.top) === topN)); });
+}
+function render() {
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  const list = (D.top[lg] || []).filter((m) => m.rank <= topN);
+  const have = list.filter((m) => m.have).length;
+  const name = D.leagues.find((l) => l.key === lg).label;
+  document.getElementById('n').textContent = name + ' League top ' + topN + ' · ' + have + ' have · ' + (list.length - have) + ' missing';
+  const shown = list.filter((m) => (show === 'all' || (show === 'have') === m.have) && (!q || m.name.toLowerCase().includes(q)));
+  document.getElementById('grid').innerHTML = !D.top[lg].length ? '<p class="empty">No ' + name + ' League rankings downloaded yet.</p>' : shown.length ? '<div class="metagrid">' + shown.map((m) =>
+    '<div class="mtile ' + (m.have ? 'have' : 'missing') + '" title="#' + m.rank + ' ' + esc(m.name) + (m.have ? '' : ': not had') + '"><span class="rk">#' + m.rank + '</span>' + (m.shadow ? '<span class="sh" title="Shadow">S</span>' : '') +
+    '<img src="/sprite/' + encodeURIComponent(m.id) + '?dex=' + m.dex + '" alt="" loading="lazy"><span class="nm">' + esc(m.name.replace(' (Shadow)', '')) + '</span></div>').join('') + '</div>' : '<p class="empty">Nothing here.</p>';
+}
+document.getElementById('lg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; lg = b.dataset.lg; mem.set('metaLg', lg); mark(); render(); });
+document.getElementById('show').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; show = b.dataset.v; mem.set('metaShow', show); mark(); render(); });
+document.getElementById('top').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; topN = Number(b.dataset.top); mem.set('metaTop', String(topN)); mark(); render(); });
+document.getElementById('q').addEventListener('input', render);
+mark(); render();
+</script>
+</body></html>`;
+}
+
+// Teams tab (Ben 2026-11-26): recommended teams from the Pokémon Ben kept (built or buildable), Recommended / Off-meta.
+type TeamsByLeague = Partial<Record<AnyLeague, { rec: Team[]; off: Team[]; pool: number }>>;
+function teamsPage(teams: TeamsByLeague, dust: number, alerts: { id: number; change: MetaChange; dismissed: boolean }[]): string {
+  const latest = alerts[0];
+  return `${head('Teams · Lilycove Co')}
+${nav('teams')}
+<main>
+${latest && !latest.dismissed ? metaAlertCard(latest, true) : ''}
+<section class="card tools">
+<div class="dexkinds" id="lg" role="group" aria-label="League">${TEAM_LEAGUES.map((l, i) => `<button data-lg="${l.key}"${i ? '' : ' class="on"'}>${l.label}</button>`).join('')}</div>
+<div class="seg" id="mode" role="group" aria-label="Team style"><button data-v="rec" class="on" aria-pressed="true">Recommended</button><button data-v="off" aria-pressed="false">Off-meta</button></div>
+<p class="why" id="hint"></p>
+</section>
+<section id="teams"></section>
+${latest && latest.dismissed ? `<details class="card fold"><summary><h2>Last meta change (${esc(latest.change.from)} → ${esc(latest.change.to)})</h2></summary>${metaAlertCard(latest, true).replace(/<button class="mv"[^>]*>Got it<\/button>/, '')}</details>` : ''}
+${SUPPORT}</main>
+<script id="data" type="application/json">${pageJson({ teams, dust, leagues: TEAM_LEAGUES, offAfter: OFF_META_AFTER })}</script>
+<script>
+const D = JSON.parse(document.getElementById('data').textContent);
+const mem = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const short = (n) => n >= 1e6 ? (Math.round(n / 1e4) / 100) + 'M' : n >= 1000 ? Math.round(n / 1000) + 'k' : String(n);
+let lg = D.teams[mem.get('teamLg')] ? mem.get('teamLg') : 'great', mode = mem.get('teamMode') === 'off' ? 'off' : 'rec';
+function mark() {
+  document.querySelectorAll('#lg button').forEach((b) => b.classList.toggle('on', b.dataset.lg === lg));
+  document.querySelectorAll('#mode button').forEach((b) => { b.classList.toggle('on', b.dataset.v === mode); b.setAttribute('aria-pressed', String(b.dataset.v === mode)); });
+}
+function status(m) {
+  if (m.built) return '<span class="tag keep">Built</span>';
+  if (m.dust === undefined || m.dust === null) return '<span class="tag">Build to level 50</span>';
+  return m.dust <= D.dust ? '<span class="tag">Can build: ' + short(m.dust) + ' dust</span>' : '<span class="tag alert">Needs ' + short(m.dust) + ' dust</span>';
+}
+function render() {
+  const t = D.teams[lg] || { rec: [], off: [], pool: 0 }, list = t[mode], name = D.leagues.find((l) => l.key === lg).label;
+  document.getElementById('hint').textContent = mode === 'off'
+    ? 'Off-meta: your Pokémon outside PvPoke\u2019s top ' + D.offAfter + ', each with an off-meta build (a less common charged move for coverage).'
+    : 'Built from your ' + t.pool + ' kept ' + name + ' League Pokémon (your top-100 ones first), scored against PvPoke\u2019s top 40. Built ones get a bonus; big dust bills count against.';
+  document.getElementById('teams').innerHTML = list.length ? list.map((team, i) =>
+    '<article class="card team"><h3>Team ' + (i + 1) + '</h3>' + team.members.map((m) =>
+      '<div class="tm"><img src="/sprite/' + encodeURIComponent(m.id) + '" alt="" loading="lazy"><div><div class="role">' + m.role + '</div><div class="nm">' + esc(m.name) + ' <span class="meta">#' + m.place + '</span> ' + status(m) + '</div>' +
+      '<div class="mvs">' + m.moves.map((x) => esc(x.name) + '<span class="ty">' + esc(x.type) + '</span>' + (x.elite ? ' <span class="tag elite">Elite TM</span>' : '')).join(' · ') + '</div></div></div>').join('') +
+    '<p class="why">Beats or trades well with ' + team.covers + ' of the top ' + team.threats + '.' + (team.weakTo.length ? ' Watch out for: ' + team.weakTo.map(esc).join(', ') + '.' : '') + '</p></article>').join('')
+    : '<section class="card"><p class="empty">' + (mode === 'off' ? 'Not enough off-meta ' + name + ' League Pokémon kept yet (need 3 outside the top ' + D.offAfter + ').' : lg === 'master' ? 'Master League teams use functionally perfect Pokémon (15 attack, 14+ defense and HP). Keep 3 of those to get a team.' : 'Need at least 3 kept ' + name + ' League Pokémon. Scan more.') + '</p></section>';
+}
+document.getElementById('lg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; lg = b.dataset.lg; mem.set('teamLg', lg); mark(); render(); });
+document.getElementById('mode').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; mode = b.dataset.v; mem.set('teamMode', mode); mark(); render(); });
+document.addEventListener('click', async (e) => {
+  const md = e.target.closest('[data-metadismiss]'); if (!md) return;
+  await fetch('/api/meta-changes/' + md.dataset.metadismiss + '/dismiss', { method: 'POST' }); location.reload();
+});
+mark(); render();
+</script>
+</body></html>`;
+}
+
+/** Ben's kept Pokémon as team candidates, per league (from the Collection grid spots: build target + built). */
+export function teamCandidates(entries: Entry[], data: LeagueData): Partial<Record<AnyLeague, Candidate[]>> {
+  const out: Partial<Record<AnyLeague, Candidate[]>> = {};
+  for (const e of entries) {
+    if (e.verdict !== 'keep') continue;
+    for (const s of e.grid) {
+      if (!s.league || !data[s.league]) continue;
+      const id = e.shadow && data[s.league].has(`${s.id}_shadow`) ? `${s.id}_shadow` : s.id;
+      const dust = s.built ? 0 : e.build && e.build.league === s.league ? e.build.total.dust : undefined;
+      (out[s.league] ??= []).push({ id, name: data[s.league].get(id)?.name ?? s.name, entryId: e.id, built: !!s.built, dust, shadow: e.shadow });
+    }
+  }
+  return out;
 }
 
 // Settings (Ben, 2026-11-23): Clear all my Pokémon, behind a 3-second hold. The Pokédex is never touched.
@@ -869,9 +1039,8 @@ b.addEventListener("keydown", (e) => { if (e.key === " " || e.key === "Enter") m
 const body = (req: IncomingMessage) =>
   new Promise<Buffer>((ok, bad) => { const parts: Buffer[] = []; req.on('data', (c) => parts.push(c)).on('end', () => ok(Buffer.concat(parts))).on('error', bad); });
 
-export function startServer(store: Store, port = PORT, { read, collection, split, dataInfo, uploadDir = join(tmpdir(), 'lilycove-uploads'), spriteDir = join(tmpdir(), 'lilycove-sprites'), fetchImpl,
-  dexSpecies = () => [], dexInbox = join(tmpdir(), 'lilycove-pokedex-inbox'), readDex }: ServerOptions = {}, host = '0.0.0.0'): Promise<Server> {
-  const jobs = new Map<string, Job>();
+export function startServer(store: Store, port = PORT, { read, collection, dataInfo, uploadDir = join(tmpdir(), 'lilycove-uploads'), spriteDir = join(tmpdir(), 'lilycove-sprites'), fetchImpl,
+  dexSpecies = () => [], dexInbox = join(tmpdir(), 'lilycove-pokedex-inbox'), readDex, metaTop, leagueData }: ServerOptions = {}, host = '0.0.0.0'): Promise<Server> {
   // Closing + opening the app (server restart) starts a new session. Whole seconds: upload times are stored to the second.
   const startedAt = Math.floor(Date.now() / 1000) * 1000;
 
@@ -976,32 +1145,6 @@ export function startServer(store: Store, port = PORT, { read, collection, split
       return json({ ok: true, notify, rename });
     }
 
-    if (post('/video')) {
-      if (!read || !split) return json({ ok: false, reason: 'Video mode not set up' }, 503);
-      const video = await saveUpload(req);
-      const id = String(Date.now());
-      const job: Job = { total: 0, processed: 0, failed: 0, done: false, results: [] };
-      jobs.set(id, job);
-      json({ job: id });
-      // Runs after the response; the page polls GET /video/<id>.
-      const framesDir = `${video}-frames`;
-      try {
-        const frames = await split(video, framesDir);
-        job.total = frames.length;
-        for (const f of frames) {
-          await new Promise((r) => setImmediate(r)); // keep the server responsive between frames
-          const { result, placed, rename } = ingest(f, `${video}-${basename(f)}`);
-          if (!result.ok) job.failed++;
-          job.results.push(result.ok ? { ok: true, species: result.scan.species, cp: result.scan.cp, name: rename, verdict: placed?.verdict, beats: placed?.beats } : { ok: false, reason: result.reason });
-          job.processed++;
-        }
-      } catch (e) { job.error = (e as Error).message; }
-      removeUpload(uploadDir, video);
-      removeUpload(uploadDir, framesDir);
-      job.done = true;
-      return;
-    }
-
     // Manual CP override: re-read a failed scan's kept image with the CP Ben typed.
     if (post('/retry')) {
       if (!read) return json({ ok: false, reason: 'Screen reader not set up' }, 503);
@@ -1064,6 +1207,29 @@ export function startServer(store: Store, port = PORT, { read, collection, split
       const inbox = Object.fromEntries(DEX_KINDS.map((k) => [k.key, existsSync(join(dexInbox, k.key)) ? readdirSync(join(dexInbox, k.key)).filter((f) => !f.startsWith('.')).length : 0]));
       return void res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(pokedexPage(dexSpecies(), marks, inbox, !!readDex));
     }
+    if (req.method === 'GET' && req.url === '/teams') {
+      const data = leagueData?.();
+      const teams: TeamsByLeague = {};
+      if (data) {
+        const cands = teamCandidates(collection ? collection.entries() : [], data);
+        for (const l of TEAM_LEAGUES) {
+          const c = cands[l.key] ?? [];
+          teams[l.key] = { rec: buildTeams(data[l.key], c), off: buildTeams(data[l.key], c, { offMeta: true }), pool: new Set(c.map((x) => x.id)).size };
+        }
+      }
+      return void res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(teamsPage(teams, store.inventory().dust, store.metaChanges()));
+    }
+    const metaDismiss = req.method === 'POST' && req.url?.match(/^\/api\/meta-changes\/(\d+)\/dismiss$/);
+    if (metaDismiss) { store.dismissMetaChange(Number(metaDismiss[1])); return json({ ok: true }); }
+    if (req.method === 'GET' && req.url === '/meta') {
+      const tops = metaTop ? metaTop() : { great: [], ultra: [], master: [], little: [] } as Record<AnyLeague, MetaMon[]>;
+      const ids = (k: string) => new Set([...store.dexMarks(k)].filter(([, st]) => st === 'have').map(([d]) => d));
+      const dexHave = ids('normal'), shadowHave = ids('shadow');
+      const owned = new Set<string>();
+      for (const e of collection ? collection.entries() : []) for (const id of [e.speciesId, e.build?.targetId]) if (id) owned.add(e.shadow && !id.endsWith('_shadow') ? `${id}_shadow` : id);
+      const top = Object.fromEntries(Object.entries(tops).map(([l, list]) => [l, list.map((m) => ({ ...m, have: haveMeta(m, dexHave, shadowHave, owned) }))])) as Record<AnyLeague, (MetaMon & { have: boolean })[]>;
+      return void res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(metaPage(top));
+    }
     if (post('/api/dex')) {
       let d: any;
       try { d = JSON.parse((await body(req)).toString() || '{}'); } catch { return json({ ok: false, reason: 'Bad JSON' }, 400); }
@@ -1110,17 +1276,11 @@ export function startServer(store: Store, port = PORT, { read, collection, split
     }
     if (req.method === 'GET' && req.url === '/api/collection') return json(collection ? collection.entries() : []);
 
-    const jobMatch = req.method === 'GET' && req.url?.match(/^\/video\/(\w+)$/);
-    if (jobMatch) {
-      const job = jobs.get(jobMatch[1]);
-      return job ? json(job) : json({ error: 'No such job' }, 404);
-    }
-
     if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
       cleanup();
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(homePage(store, uploadDir, collection, dataInfo));
     } else if (req.url === '/api/count') {
-      json({ scanned: store.count() });
+      json({ scanned: store.count(), ...store.scanStats() });
     } else res.writeHead(404).end('Not found');
   }
   server.on('close', () => clearInterval(sweeper));

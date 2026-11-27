@@ -1,5 +1,5 @@
 // Pokédex tab (Ben, 2026-11-23): Pokémon GO's special dexes (shiny, lucky, 100%, XXL, ...) with missing spots by national dex number.
-// Marks come from Ben's taps now; reading Pokédex screenshots is issue 12 (reader plugs in as ServerOptions.readDex).
+// Marks come from Ben's taps (tap = have / don't have) and from Pokédex screenshots (issue 12).
 import { readCache } from './data.js';
 
 export const DEX_KINDS = [
@@ -18,13 +18,13 @@ export interface DexSpecies { dex: number; name: string; id: string; mega?: bool
 /** What a Pokédex screenshot reader returns: the dex numbers it saw as caught / as missing spots. */
 export type DexRead = { ok: true; have: number[]; missing: number[]; kind?: string } | { ok: false; reason: string };
 
-/** One entry per national dex number released in Pokémon GO (PvPoke gamemaster), base form name. */
+/** One entry per national dex number, all 1025 (Ben 2026-11-26: every spot, released in GO or not), base form name. */
 export function loadDexSpecies(cacheDir: string): DexSpecies[] {
   const byDex = new Map<number, DexSpecies>();
   const gm = readCache(cacheDir, 'pvpoke-gamemaster.json').pokemon as any[];
   const mega = new Set(gm.filter((p) => p.released && /\((Mega|Primal)/.test(p.speciesName)).map((p) => p.dex));
   for (const p of gm) {
-    if (!p.released || p.dex < 1) continue;
+    if (p.dex < 1) continue;
     const plain = !/\(/.test(p.speciesName);
     const cur = byDex.get(p.dex);
     if (!cur || (plain && /\(/.test(cur.name))) byDex.set(p.dex, { dex: p.dex, name: p.speciesName, id: p.speciesId });

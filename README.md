@@ -2,17 +2,21 @@
 
 A local helper for sorting a Pokémon GO collection. It runs on a Mac, and you open it on the Mac or your iPhone.
 
-- Reads appraisal screenshots and screen recordings (Apple Vision OCR + IV bars read from pixels).
+- Reads appraisal screenshots (Apple Vision OCR + IV bars read from pixels).
 - Works out PvP IV ranks for every evolution in Little, Great and Ultra League ([ohbem](https://github.com/Mygod/ohbem)) and checks them against [PvPoke](https://pvpoke.com) rankings.
 - Sorts everything into Keep / Trade / Transfer, with a rename string and a search string you copy straight into the game.
 - Collection tab: list or Pokédex-style grid. Each tile's bar shows Little / Great / Ultra / Master builds (solid = built, striped = have one, not built). Includes a dust and Elite TM planner.
-- Pokédex tab: tracks special dexes (shiny, lucky, 100%, XXL...) from screenshots.
+- Pokédex tab: all 1025 spots; tap to mark what you have, or upload Pokédex screenshots. Special dexes too (shiny, lucky, 100%, XXL...).
+- Meta tab: PvPoke's top 100 per league, greyed out when you don't have it.
+- Teams tab: recommended and off-meta teams of 3 from the Pokémon you kept, with roles, moves and the dust left to build. Alerts when the meta changes (who climbed, who fell, move stat changes), checked every time the app starts.
+- Recommended or off-meta build for every kept Pokémon.
+- Scan count for today (resets at midnight) plus a lifetime total.
 
 It only reads screenshots. It never logs into or talks to Pokémon GO servers.
 
 ## Run it
 
-Needs macOS, Node 22+, Xcode command line tools (for the Vision helper) and ffmpeg.
+Needs macOS, Node 22+, Xcode command line tools (for the Vision helper).
 
 ```bash
 npm install

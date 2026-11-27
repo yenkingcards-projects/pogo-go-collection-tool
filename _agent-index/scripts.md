@@ -1,6 +1,6 @@
 # lilycove_co/scripts - detail index
 
-Generated 2026-11-24. Back to [overview](../AGENT-INDEX.md). Every line has the full path from `lilycove_co/`.
+Generated 2026-11-26. Back to [overview](../AGENT-INDEX.md). Every line has the full path from `lilycove_co/`.
 
 **scripts/** - You are one round of a Ralph loop for Lilycove Co. Follow CLAUDE.md.
 4 files, 4 code/docs. Top types: 3 .sh, 1 .md.
